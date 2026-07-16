@@ -1,0 +1,38 @@
+{
+  "name": "SYNAPSE_WORKSPACE_",
+  "version": "1.0.0",
+  "description": "",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "db:up": "docker compose up -d db",
+    "db:down": "docker compose down",
+    "db:logs": "docker compose logs -f db",
+    "db:migrate": "pnpm --filter @synapse/backend db:migrate",
+    "dev:backend": "pnpm --filter @synapse/backend dev",
+    "dev:frontend": "pnpm --filter @synapse/frontend dev",
+    "build": "pnpm -r --filter @synapse/* build",
+    "test": "echo \"No unit tests configured yet\"",
+    "smoke:embedding": "node --env-file=.env scripts/smoke/openrouter-embedding.js",
+    "smoke:embedding:db": "node --env-file=.env scripts/smoke/openrouter-pgvector-e2e.js",
+    "smoke:embedding:db:local": "node scripts/smoke/run-local-pgvector-e2e.js",
+    "smoke:semantic": "node --env-file=.env scripts/smoke/semantic-search-smoke.js",
+    "smoke:resilience": "node --env-file=.env scripts/smoke/resilience-fallback-smoke.js",
+    "smoke:graphql": "node --env-file=.env scripts/smoke/graphql-base-smoke.js",
+    "smoke:graphql:subscription": "node --env-file=.env scripts/smoke/graphql-subscription-noteupdated-smoke.js",
+    "smoke:autosave": "node --env-file=.env scripts/smoke/autosave-realistic-smoke.js",
+    "smoke:foundation:local": "node scripts/smoke/run-local-foundation-smokes.js",
+    "smoke:realtime:local": "node scripts/smoke/run-local-realtime-smokes.js",
+    "smoke:db:up": "docker run -d --name synapse-pgvector-test -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_DB=synapse_test -p 55432:5432 pgvector/pgvector:pg18",
+    "smoke:db:down": "docker rm -f synapse-pgvector-test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.33.0",
+  "dependencies": {
+    "graphql": "^16.12.0",
+    "pg": "^8.22.0"
+  }
+}

@@ -1,0 +1,268 @@
+:root {
+  --bg: #090b10;
+  --surface: #111726;
+  --surface-2: #0d1320;
+  --text: #ecf2ff;
+  --muted: #9aa7bf;
+  --line: #263149;
+  --accent: #35d0ff;
+  --accent-2: #4bf7b6;
+  --danger: #ff5f7a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background:
+    radial-gradient(1200px 600px at 20% -10%, rgba(53, 208, 255, 0.18), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, rgba(75, 247, 182, 0.12), transparent 55%),
+    var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", "Inter", system-ui, -apple-system, sans-serif;
+  min-height: 100%;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+.app-shell {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: clamp(1.4rem, 2.5vw, 2.1rem);
+  letter-spacing: 0.02em;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.badge {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  background: rgba(17, 23, 38, 0.7);
+}
+
+.layout-grid {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 16px;
+}
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(17, 23, 38, 0.92), rgba(13, 19, 32, 0.9));
+  backdrop-filter: blur(6px);
+}
+
+.sidebar {
+  padding: 14px;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+}
+
+.row > * {
+  flex: 1;
+}
+
+.segment {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.segment button {
+  flex: 1;
+  border: 0;
+  background: rgba(8, 12, 20, 0.85);
+  color: var(--muted);
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.segment button.active {
+  color: var(--text);
+  background: linear-gradient(135deg, rgba(53, 208, 255, 0.22), rgba(75, 247, 182, 0.14));
+}
+
+.input,
+.textarea,
+.search {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: rgba(7, 10, 16, 0.8);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.textarea {
+  min-height: 380px;
+  resize: vertical;
+}
+
+.btn {
+  border: 1px solid var(--line);
+  background: rgba(18, 24, 40, 0.95);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  border-color: var(--accent);
+}
+
+.btn-primary {
+  border-color: rgba(53, 208, 255, 0.45);
+  background: linear-gradient(135deg, rgba(53, 208, 255, 0.2), rgba(75, 247, 182, 0.16));
+}
+
+.btn-danger {
+  border-color: rgba(255, 95, 122, 0.35);
+}
+
+.note-list {
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+  max-height: 65vh;
+  overflow: auto;
+}
+
+.note-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(10, 14, 23, 0.9);
+  cursor: pointer;
+}
+
+.note-card.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(53, 208, 255, 0.2);
+}
+
+.note-title {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.editor {
+  padding: 16px;
+}
+
+.editor-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.meta-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.pill {
+  font-size: 12px;
+  border-radius: 999px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.pill.pending {
+  border-color: rgba(255, 199, 70, 0.4);
+  color: #ffd27c;
+}
+
+.pill.synced {
+  border-color: rgba(75, 247, 182, 0.3);
+  color: #8ff7cf;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 5, 10, 0.72);
+  backdrop-filter: blur(3px);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.modal {
+  width: min(420px, 100%);
+  padding: 16px;
+}
+
+.toasts {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  display: grid;
+  gap: 8px;
+  width: min(340px, calc(100% - 24px));
+}
+
+.toast {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: rgba(12, 18, 30, 0.95);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.toast.success {
+  border-color: rgba(75, 247, 182, 0.35);
+}
+
+.toast.error {
+  border-color: rgba(255, 95, 122, 0.45);
+}
+
+.toast.info {
+  border-color: rgba(53, 208, 255, 0.4);
+}
+
+@media (max-width: 980px) {
+  .layout-grid {
+    grid-template-columns: 1fr;
+  }
+}
