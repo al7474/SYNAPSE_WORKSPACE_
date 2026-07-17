@@ -24,6 +24,23 @@ function extractSessionId(request: Request): string | null {
   return null;
 }
 
+function extractUserEmail(request: Request): string | null {
+  const headerValue = request.headers.get("x-user-email")?.trim().toLowerCase();
+
+  if (headerValue) {
+    return headerValue;
+  }
+
+  const url = new URL(request.url);
+  const queryValue = url.searchParams.get("userEmail")?.trim().toLowerCase();
+
+  if (queryValue) {
+    return queryValue;
+  }
+
+  return null;
+}
+
 async function bootstrap() {
   const pool = new Pool({ connectionString: env.databaseUrl });
   const pubSub = createPubSub<{ NOTE_UPDATED: [Note] }>();
@@ -40,7 +57,11 @@ async function bootstrap() {
       },
       subscribe: (topic) => pubSub.subscribe(topic),
     }),
-    context: ({ request }) => ({ notesService, sessionId: extractSessionId(request) }),
+    context: ({ request }) => ({
+      notesService,
+      sessionId: extractSessionId(request),
+      userEmail: extractUserEmail(request),
+    }),
     graphiql: true,
   });
 

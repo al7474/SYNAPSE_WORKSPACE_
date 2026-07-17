@@ -1,5 +1,6 @@
 export interface Note {
   id: string;
+  boardId: string;
   title: string;
   content: string;
   embeddingPending: boolean;
@@ -9,14 +10,50 @@ export interface Note {
   ownerId?: string;
 }
 
+export type BoardPermission = "view" | "edit";
+
+export interface Board {
+  id: string;
+  ownerId: string;
+  name: string;
+  shareToken: string | null;
+  sharePermission: BoardPermission;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SharedBoardAccess {
+  board: Board;
+  permission: BoardPermission;
+}
+
+export interface BoardCollaborator {
+  boardId: string;
+  email: string;
+  permission: BoardPermission;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AccessIdentity {
+  ownerId: string;
+  userEmail?: string;
+}
+
 export interface CreateNoteInput {
   ownerId: string;
+  userEmail?: string;
+  boardId: string;
+  shareToken?: string;
   title: string;
   content: string;
 }
 
 export interface UpdateNoteInput {
   ownerId: string;
+  userEmail?: string;
+  boardId: string;
+  shareToken?: string;
   id: string;
   title?: string;
   content?: string;
@@ -24,7 +61,17 @@ export interface UpdateNoteInput {
 
 export interface SemanticSearchInput {
   ownerId: string;
+  userEmail?: string;
+  boardId: string;
+  shareToken?: string;
   query: string;
   limit?: number;
   minSimilarity?: number;
+}
+
+export interface ListNotesInput {
+  ownerId: string;
+  userEmail?: string;
+  boardId: string;
+  shareToken?: string;
 }

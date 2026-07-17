@@ -4,10 +4,32 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Note = {
   id: string;
+  boardId: string;
   title: string;
   content: string;
   embeddingPending: boolean;
   semanticScore?: number | null;
+};
+
+type BoardPermission = "view" | "edit";
+
+type Board = {
+  id: string;
+  ownerId: string;
+  name: string;
+  shareToken: string | null;
+  sharePermission: BoardPermission;
+};
+
+type SharedBoardAccess = {
+  board: Board;
+  permission: BoardPermission;
+};
+
+type BoardCollaborator = {
+  boardId: string;
+  email: string;
+  permission: BoardPermission;
 };
 
 type NotesFilter = "all" | "indexed" | "pending";
@@ -27,6 +49,7 @@ const GRAPHQL_ENDPOINT =
 
 const SESSION_ID_KEY = "synapse_session_id";
 const SESSION_MODE_KEY = "synapse_session_mode";
+const USER_EMAIL_KEY = "synapse_user_email";
 const LEGACY_GUEST_SESSION_KEY = "synapse_guest_session_id";
 
 function createGuestSessionId(): string {
@@ -43,18 +66,25 @@ function createUserSessionId(email: string): string {
 async function graphQLRequest<T>(
   query: string,
   variables?: Record<string, unknown>,
-  sessionId?: string
+  sessionId?: string,
+  userEmail?: string | null
 ): Promise<T> {
   if (!sessionId) {
-    throw new Error("Guest session not initialized");
+    throw new Error("Session not initialized");
+  }
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "x-session-id": sessionId,
+  };
+
+  if (userEmail) {
+    headers["x-user-email"] = userEmail;
   }
 
   const response = await fetch(GRAPHQL_ENDPOINT, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-session-id": sessionId,
-    },
+    headers,
     body: JSON.stringify({ query, variables }),
   });
 
@@ -75,6 +105,22 @@ async function graphQLRequest<T>(
   return payload.data;
 }
 
+function mergeBoards(existingBoards: Board[], incomingBoard: Board): Board[] {
+  const index = existingBoards.findIndex((board) => board.id === incomingBoard.id);
+
+  if (index === -1) {
+    return [incomingBoard, ...existingBoards];
+  }
+
+  const copy = [...existingBoards];
+  copy[index] = incomingBoard;
+  return copy;
+}
+
+function buildShareLink(token: string): string {
+  return `${window.location.origin}${window.location.pathname}?share=${token}`;
+}
+
 export default function HomePage() {
   const [sessionId, setSessionId] = useState<string>("");
   const [sessionMode, setSessionMode] = useState<SessionMode | null>(null);
@@ -86,6 +132,17 @@ export default function HomePage() {
   const [authError, setAuthError] = useState("");
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [isHydratingSession, setIsHydratingSession] = useState(true);
+  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
+
+  const [boards, setBoards] = useState<Board[]>([]);
+  const [activeBoardId, setActiveBoardId] = useState<string>("");
+  const [activeShareToken, setActiveShareToken] = useState<string | null>(null);
+  const [activePermission, setActivePermission] = useState<BoardPermission>("edit");
+  const [isBoardsLoading, setIsBoardsLoading] = useState(false);
+  const [isCreatingBoard, setIsCreatingBoard] = useState(false);
+  const [collaborators, setCollaborators] = useState<BoardCollaborator[]>([]);
+  const [isCollaboratorsLoading, setIsCollaboratorsLoading] = useState(false);
+
   const [notes, setNotes] = useState<Note[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
   const [draftTitle, setDraftTitle] = useState("Quick note");
@@ -104,6 +161,7 @@ export default function HomePage() {
   const [semanticResults, setSemanticResults] = useState<Note[] | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [status, setStatus] = useState("Initializing secure workspace environment...");
+
   const autoSearchDebounceRef = useRef<number | null>(null);
   const semanticRequestSeqRef = useRef(0);
 
@@ -125,8 +183,13 @@ export default function HomePage() {
   const clearSession = useCallback(() => {
     window.localStorage.removeItem(SESSION_ID_KEY);
     window.localStorage.removeItem(SESSION_MODE_KEY);
+    window.localStorage.removeItem(USER_EMAIL_KEY);
     setSessionId("");
     setSessionMode(null);
+    setBoards([]);
+    setActiveBoardId("");
+    setActiveShareToken(null);
+    setActivePermission("edit");
     setNotes([]);
     setSelectedId("");
     setSemanticResults(null);
@@ -135,7 +198,33 @@ export default function HomePage() {
     setAuthPassword("");
     setAuthConfirmPassword("");
     setAuthError("");
+    setCurrentUserEmail(null);
   }, []);
+
+  const activeBoard = useMemo(
+    () => boards.find((board) => board.id === activeBoardId) || null,
+    [boards, activeBoardId]
+  );
+
+  const canEditBoard = useMemo(() => {
+    if (!activeBoard) {
+      return false;
+    }
+
+    if (activeBoard.ownerId === sessionId) {
+      return true;
+    }
+
+    return activePermission === "edit";
+  }, [activeBoard, sessionId, activePermission]);
+
+  const isSharedBoard = useMemo(() => {
+    if (!activeBoard) {
+      return false;
+    }
+
+    return activeBoard.ownerId !== sessionId;
+  }, [activeBoard, sessionId]);
 
   const selectedNote = useMemo(
     () => notes.find((note) => note.id === selectedId) || null,
@@ -162,8 +251,81 @@ export default function HomePage() {
     return filteredNotes;
   }, [filteredNotes, semanticResults]);
 
-  const loadNotes = useCallback(async () => {
+  const loadBoards = useCallback(async () => {
     if (!sessionId) {
+      return;
+    }
+
+    setIsBoardsLoading(true);
+
+    try {
+      const data = await graphQLRequest<{ listBoards: Board[] }>(
+        `
+        query {
+          listBoards {
+            id
+            ownerId
+            name
+            shareToken
+            sharePermission
+          }
+        }
+        `,
+        undefined,
+        sessionId,
+        currentUserEmail
+      );
+
+      setBoards(data.listBoards);
+
+      if (!activeBoardId && data.listBoards.length > 0) {
+        setActiveBoardId(data.listBoards[0].id);
+        setActiveShareToken(null);
+        setActivePermission("edit");
+      }
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Failed to load boards");
+    } finally {
+      setIsBoardsLoading(false);
+    }
+  }, [sessionId, activeBoardId, currentUserEmail]);
+
+  const loadCollaborators = useCallback(async () => {
+    if (!activeBoard || activeBoard.ownerId !== sessionId) {
+      setCollaborators([]);
+      return;
+    }
+
+    setIsCollaboratorsLoading(true);
+
+    try {
+      const data = await graphQLRequest<{ listBoardCollaborators: BoardCollaborator[] }>(
+        `
+        query ListBoardCollaborators($boardId: ID!) {
+          listBoardCollaborators(boardId: $boardId) {
+            boardId
+            email
+            permission
+          }
+        }
+        `,
+        {
+          boardId: activeBoard.id,
+        },
+        sessionId,
+        currentUserEmail
+      );
+
+      setCollaborators(data.listBoardCollaborators);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unable to load collaborators");
+    } finally {
+      setIsCollaboratorsLoading(false);
+    }
+  }, [activeBoard, sessionId, currentUserEmail]);
+
+  const loadNotes = useCallback(async () => {
+    if (!sessionId || !activeBoardId) {
       return;
     }
 
@@ -171,26 +333,41 @@ export default function HomePage() {
     setStatus("Loading notes...");
 
     try {
-      const data = await graphQLRequest<{ listNotes: Note[] }>(`
-        query {
-          listNotes {
+      const data = await graphQLRequest<{ listNotes: Note[] }>(
+        `
+        query ListNotes($boardId: ID!, $shareToken: String) {
+          listNotes(boardId: $boardId, shareToken: $shareToken) {
             id
+            boardId
             title
             content
             embeddingPending
             semanticScore
           }
         }
-      `, undefined, sessionId);
+        `,
+        {
+          boardId: activeBoardId,
+          shareToken: activeShareToken,
+        },
+        sessionId,
+        currentUserEmail
+      );
 
       setNotes(data.listNotes);
       setSemanticResults(null);
 
-      if (!selectedId && data.listNotes.length > 0) {
-        const first = data.listNotes[0];
-        setSelectedId(first.id);
-        setDraftTitle(first.title);
-        setDraftContent(first.content);
+      if (data.listNotes.length > 0) {
+        setSelectedId((prevSelectedId) => {
+          if (prevSelectedId) {
+            return prevSelectedId;
+          }
+
+          const first = data.listNotes[0];
+          setDraftTitle(first.title);
+          setDraftContent(first.content);
+          return first.id;
+        });
       }
 
       setStatus("Workspace synced");
@@ -199,16 +376,18 @@ export default function HomePage() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedId, sessionId]);
+  }, [sessionId, activeBoardId, activeShareToken, currentUserEmail]);
 
   useEffect(() => {
     const storedSessionId = window.localStorage.getItem(SESSION_ID_KEY)?.trim() || "";
     const storedSessionMode = window.localStorage.getItem(SESSION_MODE_KEY) as SessionMode | null;
+    const storedUserEmail = window.localStorage.getItem(USER_EMAIL_KEY)?.trim().toLowerCase() || "";
     const legacyGuestId = window.localStorage.getItem(LEGACY_GUEST_SESSION_KEY)?.trim() || "";
 
     if (storedSessionId && (storedSessionMode === "guest" || storedSessionMode === "user")) {
       setSessionId(storedSessionId);
       setSessionMode(storedSessionMode);
+      setCurrentUserEmail(storedSessionMode === "user" && storedUserEmail ? storedUserEmail : null);
     } else if (legacyGuestId) {
       persistSession(legacyGuestId, "guest");
       window.localStorage.removeItem(LEGACY_GUEST_SESSION_KEY);
@@ -220,6 +399,8 @@ export default function HomePage() {
   const handleGuestAccess = useCallback(() => {
     const nextGuestSession = createGuestSessionId();
     persistSession(nextGuestSession, "guest");
+    window.localStorage.removeItem(USER_EMAIL_KEY);
+    setCurrentUserEmail(null);
     setStatus("Guest session active");
     pushToast("info", "You are in guest mode");
   }, [persistSession, pushToast]);
@@ -246,6 +427,8 @@ export default function HomePage() {
       try {
         const nextUserSession = createUserSessionId(email);
         persistSession(nextUserSession, "user");
+        window.localStorage.setItem(USER_EMAIL_KEY, email);
+        setCurrentUserEmail(email);
         setStatus("Signed in");
         pushToast("success", "Welcome back");
       } finally {
@@ -288,6 +471,8 @@ export default function HomePage() {
       try {
         const nextUserSession = createUserSessionId(email);
         persistSession(nextUserSession, "user");
+        window.localStorage.setItem(USER_EMAIL_KEY, email);
+        setCurrentUserEmail(email);
         setStatus("Account created");
         pushToast("success", `Welcome ${name}`);
       } finally {
@@ -302,11 +487,87 @@ export default function HomePage() {
       return;
     }
 
-    const subscriptionQuery = `subscription { noteUpdated { id title content embeddingPending } }`;
+    void loadBoards();
+  }, [sessionId, loadBoards]);
+
+  useEffect(() => {
+    void loadCollaborators();
+  }, [loadCollaborators]);
+
+  useEffect(() => {
+    if (!sessionId || boards.length === 0) {
+      return;
+    }
+
+    const shareToken = new URL(window.location.href).searchParams.get("share");
+
+    if (!shareToken) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        const data = await graphQLRequest<{ accessSharedBoard: SharedBoardAccess }>(
+          `
+          query AccessSharedBoard($token: String!) {
+            accessSharedBoard(token: $token) {
+              permission
+              board {
+                id
+                ownerId
+                name
+                shareToken
+                sharePermission
+              }
+            }
+          }
+          `,
+          { token: shareToken },
+          sessionId,
+          currentUserEmail
+        );
+
+        setBoards((prev) => mergeBoards(prev, data.accessSharedBoard.board));
+        setActiveBoardId(data.accessSharedBoard.board.id);
+        setActiveShareToken(shareToken);
+        setActivePermission(data.accessSharedBoard.permission);
+        setStatus(
+          data.accessSharedBoard.permission === "edit"
+            ? "Shared board opened with edit access"
+            : "Shared board opened in read-only mode"
+        );
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "Unable to open shared board");
+      }
+    })();
+  }, [sessionId, boards.length, currentUserEmail]);
+
+  useEffect(() => {
+    if (!sessionId || !activeBoardId) {
+      return;
+    }
+
+    const subscriptionQuery = `
+      subscription NoteUpdated($boardId: ID!, $shareToken: String) {
+        noteUpdated(boardId: $boardId, shareToken: $shareToken) {
+          id
+          boardId
+          title
+          content
+          embeddingPending
+        }
+      }
+    `;
+
     const queryParam = encodeURIComponent(subscriptionQuery);
+    const variablesParam = encodeURIComponent(
+      JSON.stringify({ boardId: activeBoardId, shareToken: activeShareToken })
+    );
     const sessionParam = encodeURIComponent(sessionId);
+    const userEmailParam = currentUserEmail ? `&userEmail=${encodeURIComponent(currentUserEmail)}` : "";
+
     const eventSource = new EventSource(
-      `${GRAPHQL_ENDPOINT}?query=${queryParam}&sessionId=${sessionParam}`
+      `${GRAPHQL_ENDPOINT}?query=${queryParam}&variables=${variablesParam}&sessionId=${sessionParam}${userEmailParam}`
     );
 
     eventSource.onmessage = (event) => {
@@ -329,17 +590,6 @@ export default function HomePage() {
           copy[existingIndex] = note;
           return copy;
         });
-
-        if (note.id === selectedId) {
-          const hasUnsavedChanges =
-            (selectedNote?.title ?? "") !== draftTitle ||
-            (selectedNote?.content ?? "") !== draftContent;
-
-          if (!hasUnsavedChanges) {
-            setDraftTitle(note.title);
-            setDraftContent(note.content);
-          }
-        }
       } catch {
         pushToast("error", "Realtime payload parse error");
       }
@@ -349,10 +599,29 @@ export default function HomePage() {
       pushToast("error", "Realtime connection interrupted");
     };
 
-    return () => {
-      eventSource.close();
-    };
-  }, [selectedId, selectedNote, draftTitle, draftContent, pushToast, sessionId]);
+    return () => eventSource.close();
+  }, [sessionId, activeBoardId, activeShareToken, currentUserEmail, pushToast]);
+
+  useEffect(() => {
+    if (!activeBoardId) {
+      return;
+    }
+
+    setSelectedId("");
+    setDraftTitle("Quick note");
+    setDraftContent("Start writing your Synapse note...");
+    setSemanticResults(null);
+    void loadNotes();
+  }, [activeBoardId, activeShareToken, loadNotes]);
+
+  useEffect(() => {
+    if (!selectedNote) {
+      return;
+    }
+
+    setDraftTitle(selectedNote.title);
+    setDraftContent(selectedNote.content);
+  }, [selectedNote]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -368,24 +637,7 @@ export default function HomePage() {
   }, [pushToast]);
 
   useEffect(() => {
-    if (!sessionId) {
-      return;
-    }
-
-    void loadNotes();
-  }, [loadNotes, sessionId]);
-
-  useEffect(() => {
-    if (!selectedNote) {
-      return;
-    }
-
-    setDraftTitle(selectedNote.title);
-    setDraftContent(selectedNote.content);
-  }, [selectedNote]);
-
-  useEffect(() => {
-    if (!selectedId || !selectedNote) {
+    if (!selectedId || !selectedNote || !canEditBoard) {
       return;
     }
 
@@ -400,9 +652,10 @@ export default function HomePage() {
       try {
         const data = await graphQLRequest<{ updateNote: Note }>(
           `
-          mutation UpdateNote($id: ID!, $title: String, $content: String) {
-            updateNote(id: $id, title: $title, content: $content) {
+          mutation UpdateNote($boardId: ID!, $shareToken: String, $id: ID!, $title: String, $content: String) {
+            updateNote(boardId: $boardId, shareToken: $shareToken, id: $id, title: $title, content: $content) {
               id
+              boardId
               title
               content
               embeddingPending
@@ -410,11 +663,14 @@ export default function HomePage() {
           }
           `,
           {
+            boardId: activeBoardId,
+            shareToken: activeShareToken,
             id: selectedId,
             title: draftTitle,
             content: draftContent,
           },
-          sessionId
+          sessionId,
+          currentUserEmail
         );
 
         const updated = data.updateNote;
@@ -422,7 +678,6 @@ export default function HomePage() {
         setNotes((prev) => prev.map((note) => (note.id === updated.id ? updated : note)));
         setLastSavedAt(new Date().toLocaleTimeString());
         setStatus("Autosave complete");
-        pushToast("success", "Note saved");
       } catch (error) {
         setStatus(error instanceof Error ? error.message : "Autosave failed");
         pushToast("error", "Autosave failed");
@@ -432,29 +687,302 @@ export default function HomePage() {
     }, 2500);
 
     return () => window.clearTimeout(timer);
-  }, [draftContent, draftTitle, selectedId, selectedNote, pushToast, sessionId]);
+  }, [
+    selectedId,
+    selectedNote,
+    draftTitle,
+    draftContent,
+    canEditBoard,
+    activeBoardId,
+    activeShareToken,
+    sessionId,
+    currentUserEmail,
+    pushToast,
+  ]);
+
+  const runSemanticSearch = useCallback(
+    async (rawQuery: string, mode: "auto" | "manual") => {
+      if (!activeBoardId) {
+        return;
+      }
+
+      const requestId = ++semanticRequestSeqRef.current;
+      const query = rawQuery.trim();
+      const isManual = mode === "manual";
+
+      if (!query) {
+        setSemanticResults(null);
+        setStatus("Showing latest notes");
+        return;
+      }
+
+      if (query.length < 3) {
+        setSemanticResults(null);
+        if (isManual) {
+          setStatus("Type at least 3 characters for semantic search");
+        }
+        return;
+      }
+
+      if (isManual) {
+        setIsManualSearching(true);
+        setStatus("Running semantic search...");
+      }
+
+      try {
+        const data = await graphQLRequest<{ semanticSearch: Note[] }>(
+          `
+          query SemanticSearch($boardId: ID!, $shareToken: String, $query: String!, $limit: Int, $minSimilarity: Float) {
+            semanticSearch(boardId: $boardId, shareToken: $shareToken, query: $query, limit: $limit, minSimilarity: $minSimilarity) {
+              id
+              boardId
+              title
+              content
+              embeddingPending
+              semanticScore
+            }
+          }
+          `,
+          {
+            boardId: activeBoardId,
+            shareToken: activeShareToken,
+            query,
+            limit: 8,
+            minSimilarity,
+          },
+          sessionId,
+          currentUserEmail
+        );
+
+        if (requestId !== semanticRequestSeqRef.current) {
+          return;
+        }
+
+        setSemanticResults(data.semanticSearch);
+        setStatus(`Semantic search results: ${data.semanticSearch.length}`);
+      } catch (error) {
+        if (requestId !== semanticRequestSeqRef.current) {
+          return;
+        }
+
+        setStatus(error instanceof Error ? error.message : "Semantic search failed");
+      } finally {
+        if (isManual) {
+          setIsManualSearching(false);
+        }
+      }
+    },
+    [activeBoardId, activeShareToken, minSimilarity, sessionId, currentUserEmail]
+  );
+
+  useEffect(() => {
+    if (autoSearchDebounceRef.current !== null) {
+      window.clearTimeout(autoSearchDebounceRef.current);
+    }
+
+    autoSearchDebounceRef.current = window.setTimeout(() => {
+      void runSemanticSearch(searchText, "auto");
+    }, 450);
+
+    return () => {
+      if (autoSearchDebounceRef.current !== null) {
+        window.clearTimeout(autoSearchDebounceRef.current);
+      }
+    };
+  }, [searchText, minSimilarity, runSemanticSearch]);
+
+  async function handleCreateBoard(): Promise<void> {
+    const name = window.prompt("Board name", "Product roadmap");
+
+    if (!name?.trim()) {
+      return;
+    }
+
+    setIsCreatingBoard(true);
+
+    try {
+      const data = await graphQLRequest<{ createBoard: Board }>(
+        `
+        mutation CreateBoard($name: String!) {
+          createBoard(name: $name) {
+            id
+            ownerId
+            name
+            shareToken
+            sharePermission
+          }
+        }
+        `,
+        { name: name.trim() },
+        sessionId,
+        currentUserEmail
+      );
+
+      setBoards((prev) => [data.createBoard, ...prev]);
+      setActiveBoardId(data.createBoard.id);
+      setActiveShareToken(null);
+      setActivePermission("edit");
+      setStatus("Board created");
+      pushToast("success", "Board created");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Create board failed");
+      pushToast("error", "Unable to create board");
+    } finally {
+      setIsCreatingBoard(false);
+    }
+  }
+
+  async function handleRenameBoard(): Promise<void> {
+    if (!activeBoard) {
+      return;
+    }
+
+    if (activeBoard.ownerId !== sessionId) {
+      pushToast("info", "Only board owner can rename this board");
+      return;
+    }
+
+    const nextName = window.prompt("New board name", activeBoard.name)?.trim();
+
+    if (!nextName) {
+      return;
+    }
+
+    try {
+      const data = await graphQLRequest<{ updateBoard: Board }>(
+        `
+        mutation UpdateBoard($id: ID!, $name: String!) {
+          updateBoard(id: $id, name: $name) {
+            id
+            ownerId
+            name
+            shareToken
+            sharePermission
+          }
+        }
+        `,
+        {
+          id: activeBoard.id,
+          name: nextName,
+        },
+        sessionId,
+        currentUserEmail
+      );
+
+      setBoards((prev) => prev.map((board) => (board.id === data.updateBoard.id ? data.updateBoard : board)));
+      setStatus("Board renamed");
+      pushToast("success", "Board renamed");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Rename failed");
+      pushToast("error", "Unable to rename board");
+    }
+  }
+
+  async function handleShareBoard(): Promise<void> {
+    if (!activeBoardId || !activeBoard) {
+      return;
+    }
+
+    if (activeBoard.ownerId !== sessionId) {
+      pushToast("info", "Only board owner can regenerate share links");
+      return;
+    }
+
+    const permissionInput = window.prompt("Share permission: view or edit", "view")?.trim().toLowerCase();
+
+    if (permissionInput !== "view" && permissionInput !== "edit") {
+      pushToast("error", "Use permission view or edit");
+      return;
+    }
+
+    try {
+      const data = await graphQLRequest<{ createShareLink: string }>(
+        `
+        mutation CreateShareLink($boardId: ID!, $permission: BoardPermission!) {
+          createShareLink(boardId: $boardId, permission: $permission)
+        }
+        `,
+        {
+          boardId: activeBoardId,
+          permission: permissionInput,
+        },
+        sessionId,
+        currentUserEmail
+      );
+
+      const link = buildShareLink(data.createShareLink);
+      await navigator.clipboard.writeText(link);
+
+      setBoards((prev) =>
+        prev.map((board) =>
+          board.id === activeBoardId
+            ? { ...board, shareToken: data.createShareLink, sharePermission: permissionInput }
+            : board
+        )
+      );
+
+      pushToast("success", "Share link copied to clipboard");
+      setStatus(`Share link ready (${permissionInput})`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Share link failed");
+      pushToast("error", "Unable to create share link");
+    }
+  }
+
+  async function handleCopyExistingShareLink(): Promise<void> {
+    if (!activeBoard?.shareToken) {
+      pushToast("info", "This board has no share link yet");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(buildShareLink(activeBoard.shareToken));
+      setStatus("Share link copied again");
+      pushToast("success", "Share link copied");
+    } catch {
+      pushToast("error", "Unable to copy share link");
+    }
+  }
 
   async function handleCreateNote(): Promise<void> {
+    if (!activeBoardId || !canEditBoard) {
+      return;
+    }
+
     setIsCreating(true);
     setStatus("Creating note...");
 
     try {
-      const data = await graphQLRequest<{ createNote: Note }>(`
-        mutation {
-          createNote(title: "Untitled Note", content: "") {
+      const data = await graphQLRequest<{ createNote: Note }>(
+        `
+        mutation CreateNote($boardId: ID!, $shareToken: String, $title: String!, $content: String!) {
+          createNote(boardId: $boardId, shareToken: $shareToken, title: $title, content: $content) {
             id
+            boardId
             title
             content
             embeddingPending
           }
         }
-      `, undefined, sessionId);
+        `,
+        {
+          boardId: activeBoardId,
+          shareToken: activeShareToken,
+          title: "Untitled Note",
+          content: "",
+        },
+        sessionId,
+        currentUserEmail
+      );
 
       const created = data.createNote;
-      setNotes((prev) => [created, ...prev]);
       setSelectedId(created.id);
       setDraftTitle(created.title);
       setDraftContent(created.content);
+
+      // Reload from server to keep list aligned with current board context.
+      await loadNotes();
+
       setStatus("Note created");
       pushToast("success", "Note created");
     } catch (error) {
@@ -466,7 +994,7 @@ export default function HomePage() {
   }
 
   async function handleDeleteSelected(): Promise<void> {
-    if (!selectedId) {
+    if (!selectedId || !activeBoardId || !canEditBoard) {
       return;
     }
 
@@ -476,12 +1004,17 @@ export default function HomePage() {
     try {
       const data = await graphQLRequest<{ deleteNote: boolean }>(
         `
-        mutation DeleteNote($id: ID!) {
-          deleteNote(id: $id)
+        mutation DeleteNote($boardId: ID!, $shareToken: String, $id: ID!) {
+          deleteNote(boardId: $boardId, shareToken: $shareToken, id: $id)
         }
         `,
-        { id: selectedId },
-        sessionId
+        {
+          boardId: activeBoardId,
+          shareToken: activeShareToken,
+          id: selectedId,
+        },
+        sessionId,
+        currentUserEmail
       );
 
       if (!data.deleteNote) {
@@ -511,134 +1044,85 @@ export default function HomePage() {
     }
   }
 
-  const runSemanticSearch = useCallback(
-    async (rawQuery: string, mode: "auto" | "manual") => {
-      const requestId = ++semanticRequestSeqRef.current;
-      const query = rawQuery.trim();
-      const isManual = mode === "manual";
-
-      if (!query) {
-        setSemanticResults(null);
-        setStatus("Showing latest notes");
-        return;
-      }
-
-      if (query.length < 3) {
-        setSemanticResults(null);
-        if (isManual) {
-          setStatus("Type at least 3 characters for semantic search");
-        }
-        return;
-      }
-
-      if (isManual) {
-        setIsManualSearching(true);
-        setStatus("Running semantic search...");
-      }
-
-      try {
-        const data = await graphQLRequest<{ semanticSearch: Note[] }>(
-          `
-          query SemanticSearch($query: String!, $limit: Int, $minSimilarity: Float) {
-            semanticSearch(query: $query, limit: $limit, minSimilarity: $minSimilarity) {
-              id
-              title
-              content
-              embeddingPending
-              semanticScore
-            }
-          }
-          `,
-          { query, limit: 8, minSimilarity },
-          sessionId
-        );
-
-        if (requestId !== semanticRequestSeqRef.current) {
-          return;
-        }
-
-        let finalResults = data.semanticSearch;
-        let usedFallback = false;
-
-        if (finalResults.length === 0) {
-          const relaxedThreshold = Math.max(0.15, minSimilarity - 0.22);
-
-          if (relaxedThreshold < minSimilarity) {
-            const relaxed = await graphQLRequest<{ semanticSearch: Note[] }>(
-              `
-              query SemanticSearch($query: String!, $limit: Int, $minSimilarity: Float) {
-                semanticSearch(query: $query, limit: $limit, minSimilarity: $minSimilarity) {
-                  id
-                  title
-                  content
-                  embeddingPending
-                  semanticScore
-                }
-              }
-              `,
-              { query, limit: 8, minSimilarity: relaxedThreshold },
-              sessionId
-            );
-
-            if (requestId !== semanticRequestSeqRef.current) {
-              return;
-            }
-
-            if (relaxed.semanticSearch.length > 0) {
-              finalResults = relaxed.semanticSearch;
-              usedFallback = true;
-            }
-          }
-        }
-
-        setSemanticResults(finalResults);
-        setStatus(
-          usedFallback
-            ? `No strict matches. Showing broader results: ${finalResults.length}`
-            : `Semantic search results: ${finalResults.length}`
-        );
-
-        if (isManual) {
-          pushToast("success", "Semantic search complete");
-        }
-      } catch (error) {
-        if (requestId !== semanticRequestSeqRef.current) {
-          return;
-        }
-
-        setStatus(error instanceof Error ? error.message : "Semantic search failed");
-
-        if (isManual) {
-          pushToast("error", "Semantic search failed");
-        }
-      } finally {
-        if (isManual) {
-          setIsManualSearching(false);
-        }
-      }
-    },
-    [minSimilarity, pushToast, sessionId]
-  );
-
-  async function handleSemanticSearch(): Promise<void> {
-    await runSemanticSearch(searchText, "manual");
-  }
-
-  useEffect(() => {
-    if (autoSearchDebounceRef.current !== null) {
-      window.clearTimeout(autoSearchDebounceRef.current);
+  async function handleGrantAccessByEmail(): Promise<void> {
+    if (!activeBoard || activeBoard.ownerId !== sessionId) {
+      pushToast("info", "Only board owner can grant email access");
+      return;
     }
 
-    autoSearchDebounceRef.current = window.setTimeout(() => {
-      void runSemanticSearch(searchText, "auto");
-    }, 500);
+    const email = window.prompt("Collaborator email", "")?.trim().toLowerCase();
 
-    return () => {
-      if (autoSearchDebounceRef.current !== null) {
-        window.clearTimeout(autoSearchDebounceRef.current);
+    if (!email || !email.includes("@")) {
+      pushToast("error", "Please provide a valid email");
+      return;
+    }
+
+    const permission = window.prompt("Permission: view or edit", "view")?.trim().toLowerCase();
+
+    if (permission !== "view" && permission !== "edit") {
+      pushToast("error", "Permission must be view or edit");
+      return;
+    }
+
+    try {
+      await graphQLRequest<{ setBoardCollaborator: { email: string; permission: BoardPermission } }>(
+        `
+        mutation SetBoardCollaborator($boardId: ID!, $email: String!, $permission: BoardPermission!) {
+          setBoardCollaborator(boardId: $boardId, email: $email, permission: $permission) {
+            email
+            permission
+          }
+        }
+        `,
+        {
+          boardId: activeBoard.id,
+          email,
+          permission,
+        },
+        sessionId,
+        currentUserEmail
+      );
+
+      pushToast("success", `Access updated for ${email}`);
+      setStatus(`Collaborator ${email} -> ${permission}`);
+      await loadCollaborators();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unable to grant access");
+      pushToast("error", "Unable to grant access");
+    }
+  }
+
+  async function handleRemoveCollaborator(email: string): Promise<void> {
+    if (!activeBoard || activeBoard.ownerId !== sessionId) {
+      return;
+    }
+
+    try {
+      const data = await graphQLRequest<{ removeBoardCollaborator: boolean }>(
+        `
+        mutation RemoveBoardCollaborator($boardId: ID!, $email: String!) {
+          removeBoardCollaborator(boardId: $boardId, email: $email)
+        }
+        `,
+        {
+          boardId: activeBoard.id,
+          email,
+        },
+        sessionId,
+        currentUserEmail
+      );
+
+      if (!data.removeBoardCollaborator) {
+        throw new Error("Collaborator not removed");
       }
-    };
-  }, [searchText, minSimilarity, runSemanticSearch]);
+
+      setCollaborators((prev) => prev.filter((item) => item.email !== email));
+      pushToast("success", `Removed ${email}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unable to remove collaborator");
+      pushToast("error", "Unable to remove collaborator");
+    }
+  }
 
   const syncBadge = isSaving
     ? "Syncing"
@@ -811,10 +1295,18 @@ export default function HomePage() {
         <div>
           <h1>Synapse Workspace</h1>
           <p className="muted">
-            A dark, realtime notebook with semantic memory. Session: {sessionMode === "guest" ? "Guest" : "User"}
+            {activeBoard ? `Board: ${activeBoard.name}` : "Create your first board"} • Session: {sessionMode}
+          </p>
+          <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+            {boards.length} board(s) • {notes.length} note(s) in current board
           </p>
         </div>
         <div className="meta-row">
+          {isSharedBoard && (
+            <span className={`pill ${activePermission === "edit" ? "synced" : "pending"}`}>
+              Shared {activePermission}
+            </span>
+          )}
           <button className="btn" onClick={clearSession}>
             Sign out
           </button>
@@ -826,11 +1318,126 @@ export default function HomePage() {
       <div className="layout-grid">
         <aside className="panel sidebar">
           <div className="row">
-            <button className="btn btn-primary" onClick={() => void handleCreateNote()} disabled={isCreating}>
-              {isCreating ? "Creating..." : "New"}
+            <button className="btn btn-primary" onClick={() => void handleCreateBoard()} disabled={isCreatingBoard}>
+              {isCreatingBoard ? "Creating..." : "New board"}
             </button>
-            <button className="btn" onClick={() => void loadNotes()}>
-              Refresh
+            <button className="btn" onClick={() => void loadBoards()} disabled={isBoardsLoading}>
+              {isBoardsLoading ? "Refreshing..." : "Refresh"}
+            </button>
+          </div>
+
+          <div className="note-list" style={{ marginTop: 10, maxHeight: 220 }}>
+            {boards.map((board) => (
+              <article
+                key={board.id}
+                className={`note-card ${board.id === activeBoardId ? "active" : ""}`}
+                onClick={() => {
+                  setActiveBoardId(board.id);
+
+                  if (board.ownerId === sessionId) {
+                    setActiveShareToken(null);
+                    setActivePermission("edit");
+                  }
+                }}
+              >
+                <p className="note-title">{board.name}</p>
+                <div className="meta-row">
+                  <span className="pill">{board.ownerId === sessionId ? "Owned" : "Shared"}</span>
+                  {board.shareToken && <span className="pill">Link ready</span>}
+                </div>
+              </article>
+            ))}
+          </div>
+
+          <div className="row" style={{ marginTop: 10 }}>
+            <button
+              className="btn"
+              onClick={() => void handleRenameBoard()}
+              disabled={!activeBoard || activeBoard.ownerId !== sessionId}
+            >
+              Rename board
+            </button>
+            <button
+              className="btn"
+              onClick={() => void handleGrantAccessByEmail()}
+              disabled={!activeBoard || activeBoard.ownerId !== sessionId}
+            >
+              Grant by email
+            </button>
+          </div>
+
+          <div className="row" style={{ marginTop: 8 }}>
+            <button className="btn" onClick={() => void handleShareBoard()} disabled={!activeBoard}>
+              Share board
+            </button>
+            <button
+              className="btn"
+              onClick={() => void handleCopyExistingShareLink()}
+              disabled={!activeBoard?.shareToken}
+            >
+              Copy link again
+            </button>
+          </div>
+
+          {activeBoard?.shareToken && (
+            <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
+              Share link active ({activeBoard.sharePermission}) • no expiration configured.
+            </p>
+          )}
+
+          {!activeBoard?.shareToken && (
+            <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
+              Create a share link first. Once created, you can copy it again anytime.
+            </p>
+          )}
+
+          {activeBoard?.ownerId === sessionId && (
+            <div className="collaborators-box">
+              <div className="meta-row" style={{ justifyContent: "space-between" }}>
+                <strong>Collaborators</strong>
+                <button className="btn btn-compact" onClick={() => void loadCollaborators()}>
+                  Refresh
+                </button>
+              </div>
+
+              {isCollaboratorsLoading && <p className="muted" style={{ marginTop: 8 }}>Loading collaborators...</p>}
+
+              {!isCollaboratorsLoading && collaborators.length === 0 && (
+                <p className="muted" style={{ marginTop: 8 }}>
+                  No collaborators yet.
+                </p>
+              )}
+
+              {!isCollaboratorsLoading && collaborators.length > 0 && (
+                <div className="collaborators-list">
+                  {collaborators.map((collaborator) => (
+                    <div key={collaborator.email} className="collaborator-item">
+                      <div>
+                        <p className="note-title" style={{ marginBottom: 2 }}>
+                          {collaborator.email}
+                        </p>
+                        <span className="pill">{collaborator.permission}</span>
+                      </div>
+                      <button
+                        className="btn btn-danger btn-compact"
+                        onClick={() => void handleRemoveCollaborator(collaborator.email)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="row" style={{ marginTop: 8 }}>
+            <button
+              className="btn"
+              onClick={() => void handleCreateNote()}
+              disabled={!activeBoard || !canEditBoard || isCreating}
+            >
+              {isCreating ? "Creating..." : "New note"}
             </button>
           </div>
 
@@ -839,7 +1446,7 @@ export default function HomePage() {
               className="search"
               value={searchText}
               onChange={(event) => setSearchText(event.target.value)}
-              placeholder="Semantic search: docker, deploy, auth..."
+              placeholder="Search inside this board..."
             />
             <div style={{ marginTop: 8 }}>
               <label className="muted" style={{ fontSize: 12 }}>
@@ -855,8 +1462,9 @@ export default function HomePage() {
                 style={{ width: "100%" }}
               />
             </div>
+
             <div className="row" style={{ marginTop: 8 }}>
-              <button className="btn" onClick={() => void handleSemanticSearch()} disabled={isManualSearching}>
+              <button className="btn" onClick={() => void runSemanticSearch(searchText, "manual")} disabled={isManualSearching}>
                 {isManualSearching ? "Searching..." : "Search"}
               </button>
               <button
@@ -864,50 +1472,46 @@ export default function HomePage() {
                 onClick={() => {
                   setSearchText("");
                   setSemanticResults(null);
-                  void loadNotes();
                   setStatus("Showing latest notes");
                 }}
               >
                 Clear
               </button>
             </div>
+
             <div style={{ marginTop: 8 }} className="segment">
-              <button
-                className={notesFilter === "all" ? "active" : ""}
-                onClick={() => setNotesFilter("all")}
-              >
-                All
-              </button>
-              <button
-                className={notesFilter === "indexed" ? "active" : ""}
-                onClick={() => setNotesFilter("indexed")}
-              >
-                Indexed
-              </button>
-              <button
-                className={notesFilter === "pending" ? "active" : ""}
-                onClick={() => setNotesFilter("pending")}
-              >
-                Pending
-              </button>
+              <button className={notesFilter === "all" ? "active" : ""} onClick={() => setNotesFilter("all")}>All</button>
+              <button className={notesFilter === "indexed" ? "active" : ""} onClick={() => setNotesFilter("indexed")}>Indexed</button>
+              <button className={notesFilter === "pending" ? "active" : ""} onClick={() => setNotesFilter("pending")}>Pending</button>
             </div>
+
             <div style={{ marginTop: 8 }}>
               <button
                 className="btn"
                 style={{ width: "100%" }}
+                disabled={isReindexing || !canEditBoard || !activeBoardId}
                 onClick={async () => {
+                  if (!activeBoardId) {
+                    return;
+                  }
+
                   setIsReindexing(true);
                   setStatus("Retrying pending embeddings...");
 
                   try {
                     const data = await graphQLRequest<{ reindexPendingEmbeddings: number }>(
                       `
-                      mutation ReindexPending($limit: Int) {
-                        reindexPendingEmbeddings(limit: $limit)
+                      mutation ReindexPending($boardId: ID!, $shareToken: String, $limit: Int) {
+                        reindexPendingEmbeddings(boardId: $boardId, shareToken: $shareToken, limit: $limit)
                       }
                       `,
-                      { limit: 40 },
-                      sessionId
+                      {
+                        boardId: activeBoardId,
+                        shareToken: activeShareToken,
+                        limit: 40,
+                      },
+                      sessionId,
+                      currentUserEmail
                     );
 
                     await loadNotes();
@@ -920,7 +1524,6 @@ export default function HomePage() {
                     setIsReindexing(false);
                   }
                 }}
-                disabled={isReindexing}
               >
                 {isReindexing ? "Reindexing..." : "Retry Pending Embeddings"}
               </button>
@@ -929,9 +1532,7 @@ export default function HomePage() {
 
           <div className="note-list">
             {isLoading && <p className="muted">Loading notes...</p>}
-            {!isLoading && visibleNotes.length === 0 && (
-              <p className="muted">{semanticResults ? "No semantic matches" : "No notes yet."}</p>
-            )}
+            {!isLoading && visibleNotes.length === 0 && <p className="muted">No notes in this board yet.</p>}
 
             {visibleNotes.map((note) => (
               <article
@@ -965,11 +1566,12 @@ export default function HomePage() {
                   <span className={`pill ${selectedNote?.embeddingPending ? "pending" : "synced"}`}>
                     {selectedNote?.embeddingPending ? "AI indexing queued" : "AI indexed"}
                   </span>
+                  {!canEditBoard && <span className="pill pending">Read only</span>}
                 </div>
                 <button
                   className="btn btn-danger"
                   onClick={() => setShowDeleteConfirm(true)}
-                  disabled={isDeleting}
+                  disabled={isDeleting || !canEditBoard}
                 >
                   {isDeleting ? "Deleting..." : "Delete"}
                 </button>
@@ -980,6 +1582,7 @@ export default function HomePage() {
                 value={draftTitle}
                 onChange={(event) => setDraftTitle(event.target.value)}
                 placeholder="Note title"
+                disabled={!canEditBoard}
                 style={{ marginBottom: 10 }}
               />
 
@@ -988,6 +1591,7 @@ export default function HomePage() {
                 value={draftContent}
                 onChange={(event) => setDraftContent(event.target.value)}
                 placeholder="Write your note"
+                disabled={!canEditBoard}
               />
             </>
           )}
