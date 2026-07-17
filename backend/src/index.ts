@@ -7,6 +7,23 @@ import { OpenRouterEmbeddingsService } from "./modules/embeddings/openrouter-emb
 import { NotesService } from "./modules/notes/notes.service.js";
 import type { Note } from "./modules/notes/notes.types.js";
 
+function extractSessionId(request: Request): string | null {
+  const headerValue = request.headers.get("x-session-id")?.trim();
+
+  if (headerValue) {
+    return headerValue;
+  }
+
+  const url = new URL(request.url);
+  const queryValue = url.searchParams.get("sessionId")?.trim();
+
+  if (queryValue) {
+    return queryValue;
+  }
+
+  return null;
+}
+
 async function bootstrap() {
   const pool = new Pool({ connectionString: env.databaseUrl });
   const pubSub = createPubSub<{ NOTE_UPDATED: [Note] }>();
@@ -23,7 +40,7 @@ async function bootstrap() {
       },
       subscribe: (topic) => pubSub.subscribe(topic),
     }),
-    context: () => ({ notesService }),
+    context: ({ request }) => ({ notesService, sessionId: extractSessionId(request) }),
     graphiql: true,
   });
 
@@ -35,8 +52,7 @@ async function bootstrap() {
 
   if (env.pendingReindexIntervalMs > 0) {
     let running = false;
-
-    setInterval(async () => {
+    const intervalId = setInterval(async () => {
       if (running) {
         return;
       }
@@ -50,7 +66,17 @@ async function bootstrap() {
           await pubSub.publish("NOTE_UPDATED", note);
         }
       } catch (error) {
-        console.error("Pending reindex worker error:", error);
+        const authErrorCode = (error as { code?: string } | null)?.code;
+
+        if (authErrorCode === "28P01") {
+          clearInterval(intervalId);
+          console.error(
+            "Pending reindex worker disabled due to database auth error (28P01). " +
+              "Verify backend DATABASE_URL credentials and recreate local DB volume if needed."
+          );
+        } else {
+          console.error("Pending reindex worker error:", error);
+        }
       } finally {
         running = false;
       }

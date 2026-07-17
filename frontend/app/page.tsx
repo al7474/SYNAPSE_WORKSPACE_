@@ -22,10 +22,39 @@ type Toast = {
 const GRAPHQL_ENDPOINT =
   process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT || "http://localhost:4000/graphql";
 
-async function graphQLRequest<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
+const GUEST_SESSION_KEY = "synapse_guest_session_id";
+
+function getOrCreateGuestSessionId(): string {
+  const existing = window.localStorage.getItem(GUEST_SESSION_KEY);
+
+  if (existing && existing.trim().length > 0) {
+    return existing;
+  }
+
+  const sessionId =
+    typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `guest_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
+  window.localStorage.setItem(GUEST_SESSION_KEY, sessionId);
+  return sessionId;
+}
+
+async function graphQLRequest<T>(
+  query: string,
+  variables?: Record<string, unknown>,
+  sessionId?: string
+): Promise<T> {
+  if (!sessionId) {
+    throw new Error("Guest session not initialized");
+  }
+
   const response = await fetch(GRAPHQL_ENDPOINT, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-session-id": sessionId,
+    },
     body: JSON.stringify({ query, variables }),
   });
 
@@ -47,6 +76,7 @@ async function graphQLRequest<T>(query: string, variables?: Record<string, unkno
 }
 
 export default function HomePage() {
+  const [sessionId, setSessionId] = useState<string>("");
   const [notes, setNotes] = useState<Note[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
   const [draftTitle, setDraftTitle] = useState("Quick note");
@@ -102,6 +132,10 @@ export default function HomePage() {
   }, [filteredNotes, semanticResults]);
 
   const loadNotes = useCallback(async () => {
+    if (!sessionId) {
+      return;
+    }
+
     setIsLoading(true);
     setStatus("Loading notes...");
 
@@ -116,7 +150,7 @@ export default function HomePage() {
             semanticScore
           }
         }
-      `);
+      `, undefined, sessionId);
 
       setNotes(data.listNotes);
       setSemanticResults(null);
@@ -134,12 +168,23 @@ export default function HomePage() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedId]);
+  }, [selectedId, sessionId]);
 
   useEffect(() => {
+    setSessionId(getOrCreateGuestSessionId());
+  }, []);
+
+  useEffect(() => {
+    if (!sessionId) {
+      return;
+    }
+
     const subscriptionQuery = `subscription { noteUpdated { id title content embeddingPending } }`;
     const queryParam = encodeURIComponent(subscriptionQuery);
-    const eventSource = new EventSource(`${GRAPHQL_ENDPOINT}?query=${queryParam}`);
+    const sessionParam = encodeURIComponent(sessionId);
+    const eventSource = new EventSource(
+      `${GRAPHQL_ENDPOINT}?query=${queryParam}&sessionId=${sessionParam}`
+    );
 
     eventSource.onmessage = (event) => {
       try {
@@ -184,7 +229,7 @@ export default function HomePage() {
     return () => {
       eventSource.close();
     };
-  }, [selectedId, selectedNote, draftTitle, draftContent, pushToast]);
+  }, [selectedId, selectedNote, draftTitle, draftContent, pushToast, sessionId]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -200,8 +245,12 @@ export default function HomePage() {
   }, [pushToast]);
 
   useEffect(() => {
+    if (!sessionId) {
+      return;
+    }
+
     void loadNotes();
-  }, [loadNotes]);
+  }, [loadNotes, sessionId]);
 
   useEffect(() => {
     if (!selectedNote) {
@@ -241,7 +290,8 @@ export default function HomePage() {
             id: selectedId,
             title: draftTitle,
             content: draftContent,
-          }
+          },
+          sessionId
         );
 
         const updated = data.updateNote;
@@ -259,7 +309,7 @@ export default function HomePage() {
     }, 2500);
 
     return () => window.clearTimeout(timer);
-  }, [draftContent, draftTitle, selectedId, selectedNote, pushToast]);
+  }, [draftContent, draftTitle, selectedId, selectedNote, pushToast, sessionId]);
 
   async function handleCreateNote(): Promise<void> {
     setIsCreating(true);
@@ -275,7 +325,7 @@ export default function HomePage() {
             embeddingPending
           }
         }
-      `);
+      `, undefined, sessionId);
 
       const created = data.createNote;
       setNotes((prev) => [created, ...prev]);
@@ -307,7 +357,8 @@ export default function HomePage() {
           deleteNote(id: $id)
         }
         `,
-        { id: selectedId }
+        { id: selectedId },
+        sessionId
       );
 
       if (!data.deleteNote) {
@@ -375,7 +426,8 @@ export default function HomePage() {
             }
           }
           `,
-          { query, limit: 8, minSimilarity }
+          { query, limit: 8, minSimilarity },
+          sessionId
         );
 
         if (requestId !== semanticRequestSeqRef.current) {
@@ -401,7 +453,8 @@ export default function HomePage() {
                 }
               }
               `,
-              { query, limit: 8, minSimilarity: relaxedThreshold }
+              { query, limit: 8, minSimilarity: relaxedThreshold },
+              sessionId
             );
 
             if (requestId !== semanticRequestSeqRef.current) {
@@ -441,7 +494,7 @@ export default function HomePage() {
         }
       }
     },
-    [minSimilarity, pushToast]
+    [minSimilarity, pushToast, sessionId]
   );
 
   async function handleSemanticSearch(): Promise<void> {
@@ -566,7 +619,8 @@ export default function HomePage() {
                         reindexPendingEmbeddings(limit: $limit)
                       }
                       `,
-                      { limit: 40 }
+                      { limit: 40 },
+                      sessionId
                     );
 
                     await loadNotes();

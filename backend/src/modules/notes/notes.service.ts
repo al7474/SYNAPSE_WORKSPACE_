@@ -9,6 +9,7 @@ type NoteRow = {
   embedding_pending: boolean;
   created_at: Date;
   updated_at: Date;
+  owner_id: string;
   semantic_score?: number | string | null;
 };
 
@@ -36,11 +37,11 @@ export class NotesService {
 
     const result = await this.pool.query(
       `
-      INSERT INTO notes (title, content, embedding, embedding_pending)
-      VALUES ($1, $2, $3::vector, $4)
-      RETURNING id, title, content, embedding_pending, created_at, updated_at
+      INSERT INTO notes (owner_id, title, content, embedding, embedding_pending)
+      VALUES ($1, $2, $3, $4::vector, $5)
+      RETURNING id, title, content, embedding_pending, created_at, updated_at, owner_id
       `,
-      [input.title, input.content, embedding.vectorLiteral, embedding.pending]
+      [input.ownerId, input.title, input.content, embedding.vectorLiteral, embedding.pending]
     );
 
     return this.toNote(result.rows[0]);
@@ -48,8 +49,8 @@ export class NotesService {
 
   async updateNote(input: UpdateNoteInput): Promise<Note> {
     const current = await this.pool.query(
-      `SELECT id, title, content FROM notes WHERE id = $1`,
-      [input.id]
+      `SELECT id, title, content FROM notes WHERE id = $1 AND owner_id = $2`,
+      [input.id, input.ownerId]
     );
 
     if (current.rowCount === 0) {
@@ -77,8 +78,8 @@ export class NotesService {
           embedding = CASE WHEN $4::boolean THEN $3::vector ELSE embedding END,
           embedding_pending = CASE WHEN $4::boolean THEN $5 ELSE embedding_pending END,
           updated_at = NOW()
-      WHERE id = $6
-      RETURNING id, title, content, embedding_pending, created_at, updated_at
+      WHERE id = $6 AND owner_id = $7
+      RETURNING id, title, content, embedding_pending, created_at, updated_at, owner_id
       `,
       [
         input.title ?? null,
@@ -87,6 +88,7 @@ export class NotesService {
         contentChanged,
         embeddingPending,
         input.id,
+        input.ownerId,
       ]
     );
 
@@ -97,13 +99,15 @@ export class NotesService {
     return this.toNote(result.rows[0]);
   }
 
-  async listNotes(): Promise<Note[]> {
+  async listNotes(ownerId: string): Promise<Note[]> {
     const result = await this.pool.query(
       `
-      SELECT id, title, content, embedding_pending, created_at, updated_at
+      SELECT id, title, content, embedding_pending, created_at, updated_at, owner_id
       FROM notes
+      WHERE owner_id = $1
       ORDER BY updated_at DESC
-      `
+      `,
+      [ownerId]
     );
 
     return result.rows.map((row) => this.toNote(row as NoteRow));
@@ -124,22 +128,67 @@ export class NotesService {
         embedding_pending,
         created_at,
         updated_at,
+        owner_id,
         (1 - (embedding <=> $1::vector)) AS semantic_score
       FROM notes
-      WHERE embedding IS NOT NULL
+      WHERE owner_id = $4
+        AND embedding IS NOT NULL
         AND (1 - (embedding <=> $1::vector)) >= $3
       ORDER BY embedding <=> $1::vector ASC
       LIMIT $2
       `,
-      [vectorLiteral, limit, minSimilarity]
+      [vectorLiteral, limit, minSimilarity, input.ownerId]
     );
 
     return result.rows.map((row) => this.toNote(row as NoteRow));
   }
 
-  async deleteNote(id: string): Promise<boolean> {
-    const result = await this.pool.query(`DELETE FROM notes WHERE id = $1`, [id]);
+  async deleteNote(ownerId: string, id: string): Promise<boolean> {
+    const result = await this.pool.query(`DELETE FROM notes WHERE id = $1 AND owner_id = $2`, [id, ownerId]);
     return (result.rowCount ?? 0) > 0;
+  }
+
+  async reindexPendingEmbeddingsForOwner(ownerId: string, limit = 20): Promise<Note[]> {
+    const safeLimit = Math.max(1, Math.min(limit, 100));
+
+    const pending = await this.pool.query(
+      `
+      SELECT id, content
+      FROM notes
+      WHERE owner_id = $1 AND embedding_pending = TRUE
+      ORDER BY updated_at ASC
+      LIMIT $2
+      `,
+      [ownerId, safeLimit]
+    );
+
+    const updatedNotes: Note[] = [];
+
+    for (const row of pending.rows as Array<{ id: string | number; content: string }>) {
+      const embedding = await this.buildEmbedding(row.content);
+
+      if (!embedding.vectorLiteral || embedding.pending) {
+        continue;
+      }
+
+      const updated = await this.pool.query(
+        `
+        UPDATE notes
+        SET embedding = $1::vector,
+            embedding_pending = FALSE,
+            updated_at = NOW()
+        WHERE id = $2 AND owner_id = $3
+        RETURNING id, title, content, embedding_pending, created_at, updated_at, owner_id
+        `,
+        [embedding.vectorLiteral, String(row.id), ownerId]
+      );
+
+      if ((updated.rowCount ?? 0) > 0) {
+        updatedNotes.push(this.toNote(updated.rows[0] as NoteRow));
+      }
+    }
+
+    return updatedNotes;
   }
 
   async reindexPendingEmbeddings(limit = 20): Promise<Note[]> {
@@ -172,7 +221,7 @@ export class NotesService {
             embedding_pending = FALSE,
             updated_at = NOW()
         WHERE id = $2
-        RETURNING id, title, content, embedding_pending, created_at, updated_at
+        RETURNING id, title, content, embedding_pending, created_at, updated_at, owner_id
         `,
         [embedding.vectorLiteral, String(row.id)]
       );
@@ -197,6 +246,7 @@ export class NotesService {
         row.semantic_score === undefined || row.semantic_score === null
           ? null
           : Number(row.semantic_score),
+      ownerId: row.owner_id,
     };
   }
 }

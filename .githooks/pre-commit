@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+pnpm verify:env-templates
+pnpm secrets:scan

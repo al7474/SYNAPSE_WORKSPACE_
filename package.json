@@ -25,7 +25,11 @@
     "smoke:foundation:local": "node scripts/smoke/run-local-foundation-smokes.js",
     "smoke:realtime:local": "node scripts/smoke/run-local-realtime-smokes.js",
     "smoke:db:up": "docker run -d --name synapse-pgvector-test -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_DB=synapse_test -p 55432:5432 pgvector/pgvector:pg18",
-    "smoke:db:down": "docker rm -f synapse-pgvector-test"
+    "smoke:db:down": "docker rm -f synapse-pgvector-test",
+    "verify:env-templates": "node scripts/security/verify-env-templates.mjs",
+    "secrets:scan": "node scripts/security/scan-secrets.mjs",
+    "hooks:install": "node scripts/security/install-git-hooks.mjs",
+    "ci:check": "pnpm verify:env-templates && pnpm secrets:scan && pnpm build"
   },
   "keywords": [],
   "author": "",

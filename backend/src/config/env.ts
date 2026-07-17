@@ -1,6 +1,14 @@
 import dotenv from "dotenv";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-dotenv.config();
+const currentDir = path.dirname(fileURLToPath(import.meta.url));
+const backendDir = path.resolve(currentDir, "../..");
+const repoRoot = path.resolve(backendDir, "..");
+
+// Prefer backend/.env for backend runtime, then fill missing values from root .env.
+dotenv.config({ path: path.join(backendDir, ".env"), override: true });
+dotenv.config({ path: path.join(repoRoot, ".env") });
 
 function requireEnv(name: string): string {
   const value = process.env[name];
