@@ -19,25 +19,25 @@ type Toast = {
   message: string;
 };
 
+type SessionMode = "guest" | "user";
+type AuthMode = "login" | "register";
+
 const GRAPHQL_ENDPOINT =
   process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT || "http://localhost:4000/graphql";
 
-const GUEST_SESSION_KEY = "synapse_guest_session_id";
+const SESSION_ID_KEY = "synapse_session_id";
+const SESSION_MODE_KEY = "synapse_session_mode";
+const LEGACY_GUEST_SESSION_KEY = "synapse_guest_session_id";
 
-function getOrCreateGuestSessionId(): string {
-  const existing = window.localStorage.getItem(GUEST_SESSION_KEY);
+function createGuestSessionId(): string {
+  return typeof crypto.randomUUID === "function"
+    ? `guest_${crypto.randomUUID()}`
+    : `guest_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+}
 
-  if (existing && existing.trim().length > 0) {
-    return existing;
-  }
-
-  const sessionId =
-    typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : `guest_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-
-  window.localStorage.setItem(GUEST_SESSION_KEY, sessionId);
-  return sessionId;
+function createUserSessionId(email: string): string {
+  const normalizedEmail = email.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_");
+  return `user_${normalizedEmail}`;
 }
 
 async function graphQLRequest<T>(
@@ -77,6 +77,15 @@ async function graphQLRequest<T>(
 
 export default function HomePage() {
   const [sessionId, setSessionId] = useState<string>("");
+  const [sessionMode, setSessionMode] = useState<SessionMode | null>(null);
+  const [authMode, setAuthMode] = useState<AuthMode>("login");
+  const [authName, setAuthName] = useState("");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authConfirmPassword, setAuthConfirmPassword] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [isSigningIn, setIsSigningIn] = useState(false);
+  const [isHydratingSession, setIsHydratingSession] = useState(true);
   const [notes, setNotes] = useState<Note[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
   const [draftTitle, setDraftTitle] = useState("Quick note");
@@ -104,6 +113,28 @@ export default function HomePage() {
     window.setTimeout(() => {
       setToasts((prev) => prev.filter((toast) => toast.id !== id));
     }, 2600);
+  }, []);
+
+  const persistSession = useCallback((nextSessionId: string, nextMode: SessionMode) => {
+    window.localStorage.setItem(SESSION_ID_KEY, nextSessionId);
+    window.localStorage.setItem(SESSION_MODE_KEY, nextMode);
+    setSessionId(nextSessionId);
+    setSessionMode(nextMode);
+  }, []);
+
+  const clearSession = useCallback(() => {
+    window.localStorage.removeItem(SESSION_ID_KEY);
+    window.localStorage.removeItem(SESSION_MODE_KEY);
+    setSessionId("");
+    setSessionMode(null);
+    setNotes([]);
+    setSelectedId("");
+    setSemanticResults(null);
+    setAuthName("");
+    setAuthEmail("");
+    setAuthPassword("");
+    setAuthConfirmPassword("");
+    setAuthError("");
   }, []);
 
   const selectedNote = useMemo(
@@ -171,8 +202,100 @@ export default function HomePage() {
   }, [selectedId, sessionId]);
 
   useEffect(() => {
-    setSessionId(getOrCreateGuestSessionId());
-  }, []);
+    const storedSessionId = window.localStorage.getItem(SESSION_ID_KEY)?.trim() || "";
+    const storedSessionMode = window.localStorage.getItem(SESSION_MODE_KEY) as SessionMode | null;
+    const legacyGuestId = window.localStorage.getItem(LEGACY_GUEST_SESSION_KEY)?.trim() || "";
+
+    if (storedSessionId && (storedSessionMode === "guest" || storedSessionMode === "user")) {
+      setSessionId(storedSessionId);
+      setSessionMode(storedSessionMode);
+    } else if (legacyGuestId) {
+      persistSession(legacyGuestId, "guest");
+      window.localStorage.removeItem(LEGACY_GUEST_SESSION_KEY);
+    }
+
+    setIsHydratingSession(false);
+  }, [persistSession]);
+
+  const handleGuestAccess = useCallback(() => {
+    const nextGuestSession = createGuestSessionId();
+    persistSession(nextGuestSession, "guest");
+    setStatus("Guest session active");
+    pushToast("info", "You are in guest mode");
+  }, [persistSession, pushToast]);
+
+  const handleSignIn = useCallback(
+    async (event: React.FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      setAuthError("");
+
+      const email = authEmail.trim().toLowerCase();
+
+      if (!email.includes("@")) {
+        setAuthError("Please use a valid email address");
+        return;
+      }
+
+      if (authPassword.trim().length < 6) {
+        setAuthError("Password must be at least 6 characters");
+        return;
+      }
+
+      setIsSigningIn(true);
+
+      try {
+        const nextUserSession = createUserSessionId(email);
+        persistSession(nextUserSession, "user");
+        setStatus("Signed in");
+        pushToast("success", "Welcome back");
+      } finally {
+        setIsSigningIn(false);
+      }
+    },
+    [authEmail, authPassword, persistSession, pushToast]
+  );
+
+  const handleRegister = useCallback(
+    async (event: React.FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      setAuthError("");
+
+      const name = authName.trim();
+      const email = authEmail.trim().toLowerCase();
+
+      if (name.length < 2) {
+        setAuthError("Name must be at least 2 characters");
+        return;
+      }
+
+      if (!email.includes("@")) {
+        setAuthError("Please use a valid email address");
+        return;
+      }
+
+      if (authPassword.trim().length < 6) {
+        setAuthError("Password must be at least 6 characters");
+        return;
+      }
+
+      if (authPassword !== authConfirmPassword) {
+        setAuthError("Passwords do not match");
+        return;
+      }
+
+      setIsSigningIn(true);
+
+      try {
+        const nextUserSession = createUserSessionId(email);
+        persistSession(nextUserSession, "user");
+        setStatus("Account created");
+        pushToast("success", `Welcome ${name}`);
+      } finally {
+        setIsSigningIn(false);
+      }
+    },
+    [authName, authEmail, authPassword, authConfirmPassword, persistSession, pushToast]
+  );
 
   useEffect(() => {
     if (!sessionId) {
@@ -523,14 +646,178 @@ export default function HomePage() {
       ? "Issue"
       : "Synced";
 
+  if (isHydratingSession) {
+    return (
+      <main className="auth-shell">
+        <section className="auth-card panel">
+          <h1>Synapse Workspace</h1>
+          <p className="muted">Initializing secure workspace environment...</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (!sessionId || !sessionMode) {
+    return (
+      <main className="auth-shell">
+        <section className="auth-card panel">
+          <h1>Welcome back</h1>
+          <p className="muted">
+            {authMode === "login"
+              ? "Sign in to continue or enter instantly as a guest."
+              : "Create your account in seconds and start building your workspace."}
+          </p>
+
+          <div className="auth-tabs" role="tablist" aria-label="Authentication mode">
+            <button
+              type="button"
+              className={authMode === "login" ? "active" : ""}
+              onClick={() => {
+                setAuthMode("login");
+                setAuthError("");
+              }}
+            >
+              Sign in
+            </button>
+            <button
+              type="button"
+              className={authMode === "register" ? "active" : ""}
+              onClick={() => {
+                setAuthMode("register");
+                setAuthError("");
+              }}
+            >
+              Create account
+            </button>
+          </div>
+
+          {authMode === "login" ? (
+            <form className="auth-form" onSubmit={(event) => void handleSignIn(event)}>
+              <label className="muted" htmlFor="email">
+                Email
+              </label>
+              <input
+                id="email"
+                className="input"
+                type="email"
+                autoComplete="email"
+                value={authEmail}
+                onChange={(event) => setAuthEmail(event.target.value)}
+                placeholder="you@company.com"
+                required
+              />
+
+              <label className="muted" htmlFor="password">
+                Password
+              </label>
+              <input
+                id="password"
+                className="input"
+                type="password"
+                autoComplete="current-password"
+                value={authPassword}
+                onChange={(event) => setAuthPassword(event.target.value)}
+                placeholder="••••••••"
+                required
+              />
+
+              {authError && <p className="auth-error">{authError}</p>}
+
+              <button className="btn btn-primary" type="submit" disabled={isSigningIn}>
+                {isSigningIn ? "Signing in..." : "Sign in"}
+              </button>
+            </form>
+          ) : (
+            <form className="auth-form" onSubmit={(event) => void handleRegister(event)}>
+              <label className="muted" htmlFor="name">
+                Full name
+              </label>
+              <input
+                id="name"
+                className="input"
+                type="text"
+                autoComplete="name"
+                value={authName}
+                onChange={(event) => setAuthName(event.target.value)}
+                placeholder="Ada Lovelace"
+                required
+              />
+
+              <label className="muted" htmlFor="register-email">
+                Email
+              </label>
+              <input
+                id="register-email"
+                className="input"
+                type="email"
+                autoComplete="email"
+                value={authEmail}
+                onChange={(event) => setAuthEmail(event.target.value)}
+                placeholder="you@company.com"
+                required
+              />
+
+              <label className="muted" htmlFor="register-password">
+                Password
+              </label>
+              <input
+                id="register-password"
+                className="input"
+                type="password"
+                autoComplete="new-password"
+                value={authPassword}
+                onChange={(event) => setAuthPassword(event.target.value)}
+                placeholder="At least 6 characters"
+                required
+              />
+
+              <label className="muted" htmlFor="register-confirm-password">
+                Confirm password
+              </label>
+              <input
+                id="register-confirm-password"
+                className="input"
+                type="password"
+                autoComplete="new-password"
+                value={authConfirmPassword}
+                onChange={(event) => setAuthConfirmPassword(event.target.value)}
+                placeholder="Repeat your password"
+                required
+              />
+
+              {authError && <p className="auth-error">{authError}</p>}
+
+              <button className="btn btn-primary" type="submit" disabled={isSigningIn}>
+                {isSigningIn ? "Creating account..." : "Create account"}
+              </button>
+            </form>
+          )}
+
+          <div className="auth-divider" aria-hidden="true">
+            <span>or</span>
+          </div>
+
+          <button className="btn" type="button" onClick={handleGuestAccess}>
+            Continue as guest
+          </button>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="app-shell">
       <header className="hero">
         <div>
           <h1>Synapse Workspace</h1>
-          <p className="muted">A dark, realtime notebook with semantic memory.</p>
+          <p className="muted">
+            A dark, realtime notebook with semantic memory. Session: {sessionMode === "guest" ? "Guest" : "User"}
+          </p>
         </div>
         <div className="meta-row">
+          <button className="btn" onClick={clearSession}>
+            Sign out
+          </button>
           <span className="badge">{status}</span>
           <span className={`pill ${syncBadge === "Synced" ? "synced" : ""}`}>{syncBadge}</span>
         </div>

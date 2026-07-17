@@ -39,6 +39,83 @@ textarea {
   padding: 24px;
 }
 
+.auth-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.auth-card {
+  width: min(460px, 100%);
+  padding: 24px;
+}
+
+.auth-card h1 {
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+
+.auth-form {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.auth-tabs {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.auth-tabs button {
+  border: 0;
+  background: rgba(8, 12, 20, 0.85);
+  color: var(--muted);
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.auth-tabs button.active {
+  color: var(--text);
+  background: linear-gradient(135deg, rgba(53, 208, 255, 0.22), rgba(75, 247, 182, 0.14));
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 14px 0;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  border-bottom: 1px solid var(--line);
+}
+
+.auth-divider::before {
+  margin-right: 10px;
+}
+
+.auth-divider::after {
+  margin-left: 10px;
+}
+
+.auth-error {
+  margin: 2px 0 4px;
+  color: #ff9cb0;
+  font-size: 13px;
+}
+
 .hero {
   display: flex;
   justify-content: space-between;
