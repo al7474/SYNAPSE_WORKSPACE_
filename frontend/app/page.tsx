@@ -1277,323 +1277,182 @@ export default function HomePage() {
   }
 
   return (
-    <main className="app-shell">
-      <header className="hero">
-        <div>
-          <h1>Synapse Workspace</h1>
-          <p className="muted">
-            {activeBoard ? `Board: ${activeBoard.name}` : "Create your first board"} • Session: {sessionMode}
-          </p>
-          <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-            {boards.length} board(s) • {notes.length} note(s) in current board
-          </p>
+    <main className="main-figma-shell">
+      <header className="main-top-nav">
+        <div className="main-brand">
+          <div className="main-brand-logo" aria-hidden="true">S</div>
+          <strong>Synapse Workspace</strong>
         </div>
-        <div className="meta-row">
-          {isSharedBoard && (
-            <span className={`pill ${activePermission === "edit" ? "synced" : "pending"}`}>
-              Shared {activePermission}
-            </span>
-          )}
-          <button className="btn btn-signout" onClick={clearSession}>
-            Sign out
-          </button>
-          <span className="badge">{status}</span>
-          <span className={`pill ${syncBadge === "Synced" ? "synced" : ""}`}>{syncBadge}</span>
+
+        <div className="main-top-links">
+          <a href="#" onClick={(event) => event.preventDefault()}>Docs</a>
+          <a href="#" onClick={(event) => event.preventDefault()}>Pricing</a>
+          <a href="#" onClick={(event) => event.preventDefault()}>Changelog</a>
+          <button className="main-nav-ghost" onClick={clearSession}>Sign Out</button>
         </div>
       </header>
 
-      <div className="layout-grid">
-        <aside className="panel sidebar">
-          <section className="panel-section">
-            <p className="section-title">Boards</p>
-            <div className="row">
-              <button className="btn btn-primary" onClick={() => void handleCreateBoard()} disabled={isCreatingBoard}>
-                {isCreatingBoard ? "Creating..." : "New board"}
-              </button>
-              <button className="btn" onClick={() => void loadBoards()} disabled={isBoardsLoading}>
-                {isBoardsLoading ? "Refreshing..." : "Refresh"}
-              </button>
-            </div>
+      <div className="main-workspace-shell">
+        <aside className="main-left-sidebar">
+          <button className="command-palette-trigger" type="button" onClick={() => setSearchText("")}>
+            <span>Search...</span>
+            <kbd>⌘K</kbd>
+          </button>
 
-            <div className="note-list board-list">
-              {boards.map((board) => (
-                <article
-                  key={board.id}
-                  className={`note-card ${board.id === activeBoardId ? "active" : ""}`}
-                  onClick={() => {
-                    setActiveBoardId(board.id);
+          <p className="workspace-heading">WORKSPACES</p>
 
-                    if (board.ownerId === sessionId) {
-                      setActiveShareToken(null);
-                      setActivePermission("edit");
-                    }
-                  }}
-                >
-                  <p className="note-title">{board.name}</p>
-                  <div className="meta-row">
-                    <span className="pill">{board.ownerId === sessionId ? "Owned" : "Shared"}</span>
-                    {board.shareToken && <span className="pill">Link ready</span>}
-                  </div>
-                </article>
-              ))}
-            </div>
-          </section>
-
-          <section className="panel-section">
-            <p className="section-title">Access</p>
-            <div className="row">
+          <div className="workspace-list-modern">
+            {boards.map((board) => (
               <button
-                className="btn"
-                onClick={() => void handleRenameBoard()}
-                disabled={!activeBoard || activeBoard.ownerId !== sessionId}
-              >
-                Rename board
-              </button>
-              <button
-                className="btn"
-                onClick={() => void handleGrantAccessByEmail()}
-                disabled={!activeBoard || activeBoard.ownerId !== sessionId}
-              >
-                Grant by email
-              </button>
-            </div>
-
-            <div className="row" style={{ marginTop: 8 }}>
-              <button className="btn" onClick={() => void handleShareBoard()} disabled={!activeBoard}>
-                Share board
-              </button>
-              <button
-                className="btn"
-                onClick={() => void handleCopyExistingShareLink()}
-                disabled={!activeBoard?.shareToken}
-              >
-                Copy link again
-              </button>
-            </div>
-
-            {activeBoard?.shareToken && (
-              <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
-                Share link active ({activeBoard.sharePermission}) • no expiration configured.
-              </p>
-            )}
-
-            {!activeBoard?.shareToken && (
-              <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
-                Create a share link first. Once created, you can copy it again anytime.
-              </p>
-            )}
-          </section>
-
-          {activeBoard?.ownerId === sessionId && (
-            <div className="collaborators-box">
-              <div className="meta-row" style={{ justifyContent: "space-between" }}>
-                <strong>Collaborators</strong>
-                <button className="btn btn-compact" onClick={() => void loadCollaborators()}>
-                  Refresh
-                </button>
-              </div>
-
-              {isCollaboratorsLoading && <p className="muted" style={{ marginTop: 8 }}>Loading collaborators...</p>}
-
-              {!isCollaboratorsLoading && collaborators.length === 0 && (
-                <p className="muted" style={{ marginTop: 8 }}>
-                  No collaborators yet.
-                </p>
-              )}
-
-              {!isCollaboratorsLoading && collaborators.length > 0 && (
-                <div className="collaborators-list">
-                  {collaborators.map((collaborator) => (
-                    <div key={collaborator.email} className="collaborator-item">
-                      <div>
-                        <p className="note-title" style={{ marginBottom: 2 }}>
-                          {collaborator.email}
-                        </p>
-                        <span className="pill">{collaborator.permission}</span>
-                      </div>
-                      <button
-                        className="btn btn-danger btn-compact"
-                        onClick={() => void handleRemoveCollaborator(collaborator.email)}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          <section className="panel-section">
-            <p className="section-title">Search & Filters</p>
-            <div className="row" style={{ marginTop: 8 }}>
-              <button
-                className="btn"
-                onClick={() => void handleCreateNote()}
-                disabled={!activeBoard || !canEditBoard || isCreating}
-              >
-                {isCreating ? "Creating..." : "New note"}
-              </button>
-            </div>
-
-            <div style={{ marginTop: 10 }}>
-            <input
-              className="search"
-              value={searchText}
-              onChange={(event) => setSearchText(event.target.value)}
-              placeholder="Search inside this board..."
-            />
-            <div style={{ marginTop: 8 }}>
-              <label className="muted" style={{ fontSize: 12 }}>
-                Precision threshold: {(minSimilarity * 100).toFixed(0)}%
-              </label>
-              <input
-                type="range"
-                min={0.15}
-                max={0.9}
-                step={0.01}
-                value={minSimilarity}
-                onChange={(event) => setMinSimilarity(Number(event.target.value))}
-                style={{ width: "100%" }}
-              />
-            </div>
-
-            <div className="row" style={{ marginTop: 8 }}>
-              <button className="btn" onClick={() => void runSemanticSearch(searchText, "manual")} disabled={isManualSearching}>
-                {isManualSearching ? "Searching..." : "Search"}
-              </button>
-              <button
-                className="btn"
+                key={board.id}
+                type="button"
+                className={`workspace-item ${board.id === activeBoardId ? "active" : ""}`}
                 onClick={() => {
-                  setSearchText("");
-                  setSemanticResults(null);
-                  setStatus("Showing latest notes");
-                }}
-              >
-                Clear
-              </button>
-            </div>
+                  setActiveBoardId(board.id);
 
-            <div style={{ marginTop: 8 }} className="segment">
-              <button className={notesFilter === "all" ? "active" : ""} onClick={() => setNotesFilter("all")}>All</button>
-              <button className={notesFilter === "indexed" ? "active" : ""} onClick={() => setNotesFilter("indexed")}>Indexed</button>
-              <button className={notesFilter === "pending" ? "active" : ""} onClick={() => setNotesFilter("pending")}>Pending</button>
-            </div>
-
-            <div style={{ marginTop: 8 }}>
-              <button
-                className="btn"
-                style={{ width: "100%" }}
-                disabled={isReindexing || !canEditBoard || !activeBoardId}
-                onClick={async () => {
-                  if (!activeBoardId) {
-                    return;
-                  }
-
-                  setIsReindexing(true);
-                  setStatus("Retrying pending embeddings...");
-
-                  try {
-                    const data = await graphQLRequest<{ reindexPendingEmbeddings: number }>(
-                      `
-                      mutation ReindexPending($boardId: ID!, $shareToken: String, $limit: Int) {
-                        reindexPendingEmbeddings(boardId: $boardId, shareToken: $shareToken, limit: $limit)
-                      }
-                      `,
-                      {
-                        boardId: activeBoardId,
-                        shareToken: activeShareToken,
-                        limit: 40,
-                      },
-                      sessionId,
-                      currentUserEmail
-                    );
-
-                    await loadNotes();
-                    setStatus(`Reindexed notes: ${data.reindexPendingEmbeddings}`);
-                    pushToast("success", `Reindexed ${data.reindexPendingEmbeddings} notes`);
-                  } catch (error) {
-                    setStatus(error instanceof Error ? error.message : "Reindex failed");
-                    pushToast("error", "Reindex failed");
-                  } finally {
-                    setIsReindexing(false);
+                  if (board.ownerId === sessionId) {
+                    setActiveShareToken(null);
+                    setActivePermission("edit");
                   }
                 }}
               >
-                {isReindexing ? "Reindexing..." : "Retry Pending Embeddings"}
+                <span className="workspace-icon" aria-hidden="true">□</span>
+                <span>{board.name}</span>
               </button>
-            </div>
-            </div>
-          </section>
-
-          <section className="panel-section">
-            <p className="section-title">Notes</p>
-            <div className="note-list notes-list">
-            {isLoading && <p className="muted">Loading notes...</p>}
-            {!isLoading && visibleNotes.length === 0 && <p className="muted">No notes in this board yet.</p>}
-
-            {visibleNotes.map((note) => (
-              <article
-                key={note.id}
-                className={`note-card ${note.id === selectedId ? "active" : ""}`}
-                onClick={() => setSelectedId(note.id)}
-              >
-                <p className="note-title">{note.title || "Untitled"}</p>
-                <div className="meta-row">
-                  <span className={`pill ${note.embeddingPending ? "pending" : "synced"}`}>
-                    {note.embeddingPending ? "Embedding pending" : "Indexed"}
-                  </span>
-                  {semanticResults && note.semanticScore !== null && note.semanticScore !== undefined && (
-                    <span className="pill">Score {(note.semanticScore * 100).toFixed(1)}%</span>
-                  )}
-                </div>
-              </article>
             ))}
-            </div>
-          </section>
+          </div>
+
+          <button
+            className="workspace-add"
+            type="button"
+            onClick={() => void handleCreateBoard()}
+            disabled={isCreatingBoard}
+          >
+            + {isCreatingBoard ? "Creating..." : "New Board"}
+          </button>
+
+          <div className="sidebar-user-box">
+            <p>{sessionMode === "user" ? currentUserEmail || "User session" : "Guest Session"}</p>
+            <span>{activeBoard ? activeBoard.name : "No workspace selected"}</span>
+          </div>
         </aside>
 
-        <section className="panel editor">
-          {!selectedId && <p className="muted">Select or create a note to start writing.</p>}
-
-          {selectedId && (
-            <>
-              <div className="editor-header">
-                <div className="meta-row">
-                  <span className="pill">Autosave 2.5s</span>
-                  <span className="pill">Last saved: {lastSavedAt || "-"}</span>
-                  <span className={`pill ${selectedNote?.embeddingPending ? "pending" : "synced"}`}>
-                    {selectedNote?.embeddingPending ? "AI indexing queued" : "AI indexed"}
-                  </span>
-                  {!canEditBoard && <span className="pill pending">Read only</span>}
-                </div>
-                <button
-                  className="btn btn-danger"
-                  onClick={() => setShowDeleteConfirm(true)}
-                  disabled={isDeleting || !canEditBoard}
-                >
-                  {isDeleting ? "Deleting..." : "Delete"}
-                </button>
-              </div>
-
+        <section className="main-content-modern">
+          <div className="context-topbar-modern">
+            <div className="context-search-modern">
+              <span aria-hidden="true">⌕</span>
               <input
-                className="input"
-                value={draftTitle}
-                onChange={(event) => setDraftTitle(event.target.value)}
-                placeholder="Note title"
-                disabled={!canEditBoard}
-                style={{ marginBottom: 10 }}
+                value={searchText}
+                onChange={(event) => setSearchText(event.target.value)}
+                placeholder="Search boards or notes..."
               />
+            </div>
 
-              <textarea
-                className="textarea"
-                value={draftContent}
-                onChange={(event) => setDraftContent(event.target.value)}
-                placeholder="Write your note"
-                disabled={!canEditBoard}
-              />
-            </>
-          )}
+            <div className="context-actions-modern">
+              <button className="main-icon-btn" type="button" onClick={() => void loadBoards()}>
+                {isBoardsLoading ? "..." : "⚙"}
+              </button>
+              <button className="main-share-btn" type="button" onClick={() => void handleShareBoard()} disabled={!activeBoard}>
+                Share Board
+              </button>
+            </div>
+          </div>
+
+          <div className="canvas-modern">
+            <p className="canvas-breadcrumb">Project / Workspaces /</p>
+            <h2>{activeBoard ? activeBoard.name : "Select a workspace"}</h2>
+
+            <div className="note-grid-modern">
+              {isLoading && <p className="muted">Loading notes...</p>}
+
+              {!isLoading && visibleNotes.map((note) => {
+                const preview = (note.content || "No content yet")
+                  .replace(/\s+/g, " ")
+                  .trim()
+                  .slice(0, 150);
+
+                return (
+                  <article
+                    key={note.id}
+                    className={`note-card-modern ${note.id === selectedId ? "active" : ""}`}
+                    onClick={() => setSelectedId(note.id)}
+                  >
+                    <div className="note-card-modern-top">
+                      <span className="note-chip">{note.embeddingPending ? "draft" : "active"}</span>
+                      <span className="note-card-icon" aria-hidden="true">◈</span>
+                    </div>
+                    <h3>{note.title || "Untitled"}</h3>
+                    <p>{preview}{(note.content || "").length > 150 ? "..." : ""}</p>
+                    <div className="note-card-modern-footer">
+                      <span>{note.embeddingPending ? "Index pending" : "Indexed"}</span>
+                      <span>
+                        {semanticResults && note.semanticScore !== null && note.semanticScore !== undefined
+                          ? `${(note.semanticScore * 100).toFixed(1)}%`
+                          : "Live"}
+                      </span>
+                    </div>
+                  </article>
+                );
+              })}
+
+              {!isLoading && canEditBoard && (
+                <button className="note-create-modern" type="button" onClick={() => void handleCreateNote()}>
+                  <span>+</span>
+                  <p>{isCreating ? "Creating..." : "Create New Note"}</p>
+                </button>
+              )}
+            </div>
+
+            {selectedId && (
+              <section className="inline-editor-modern">
+                <div className="inline-editor-top">
+                  <div className="meta-row">
+                    <span className={`pill ${selectedNote?.embeddingPending ? "pending" : "synced"}`}>
+                      {selectedNote?.embeddingPending ? "AI indexing queued" : "AI indexed"}
+                    </span>
+                    <span className="pill">Last saved: {lastSavedAt || "-"}</span>
+                    {!canEditBoard && <span className="pill pending">Read only</span>}
+                  </div>
+                  <button
+                    className="btn btn-danger"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    disabled={isDeleting || !canEditBoard}
+                  >
+                    {isDeleting ? "Deleting..." : "Delete"}
+                  </button>
+                </div>
+
+                <input
+                  className="input"
+                  value={draftTitle}
+                  onChange={(event) => setDraftTitle(event.target.value)}
+                  placeholder="Note title"
+                  disabled={!canEditBoard}
+                  style={{ marginBottom: 10 }}
+                />
+
+                <textarea
+                  className="textarea"
+                  value={draftContent}
+                  onChange={(event) => setDraftContent(event.target.value)}
+                  placeholder="Write your note"
+                  disabled={!canEditBoard}
+                />
+              </section>
+            )}
+          </div>
+
+          <footer className="main-footer-modern">
+            <p>
+              <strong>Synapse</strong> © 2026 Built for performance.
+            </p>
+            <div>
+              <a href="#" onClick={(event) => event.preventDefault()}>Status</a>
+              <a href="#" onClick={(event) => event.preventDefault()}>Privacy</a>
+              <a href="#" onClick={(event) => event.preventDefault()}>Terms</a>
+              <a href="#" onClick={(event) => event.preventDefault()}>Security</a>
+            </div>
+          </footer>
         </section>
       </div>
 
