@@ -8,14 +8,25 @@
     "start": "next start"
   },
   "dependencies": {
+    "@blocknote/core": "^0.31.2",
+    "@blocknote/mantine": "^0.31.2",
+    "@blocknote/react": "^0.31.2",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.25.0",
     "next": "15.0.3",
     "react": "18.2.0",
-    "react-dom": "18.2.0"
+    "react-dom": "18.2.0",
+    "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^22.10.5",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
+    "autoprefixer": "^10.5.4",
+    "postcss": "^8.5.20",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5.7.3"
   }
 }

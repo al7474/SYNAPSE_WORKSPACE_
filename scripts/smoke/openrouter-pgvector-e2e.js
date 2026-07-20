@@ -62,7 +62,7 @@ async function main() {
       CREATE TABLE IF NOT EXISTS ${TABLE_NAME} (
         id BIGSERIAL PRIMARY KEY,
         content TEXT NOT NULL,
-        embedding VECTOR(2048) NOT NULL,
+        embedding VECTOR(1024) NOT NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
