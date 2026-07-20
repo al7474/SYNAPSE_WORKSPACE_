@@ -1143,147 +1143,134 @@ export default function HomePage() {
 
   if (!sessionId || !sessionMode) {
     return (
-      <main className="auth-shell">
-        <section className="auth-card panel">
-          <h1>Welcome back</h1>
-          <p className="muted">
-            {authMode === "login"
-              ? "Sign in to continue or enter instantly as a guest."
-              : "Create your account in seconds and start building your workspace."}
-          </p>
+      <main className="auth-shell figma-auth-shell">
+        <section className="figma-login-card" aria-label="Synapse login">
+          <header className="figma-login-header">
+            <div className="figma-logo-box" aria-hidden="true">
+              <svg viewBox="0 0 24 24" role="presentation" focusable="false">
+                <path d="M6 12a3 3 0 0 1 3-3h2V7H9a5 5 0 1 0 0 10h2v-2H9a3 3 0 0 1-3-3Zm12 0a3 3 0 0 0-3-3h-2V7h2a5 5 0 1 1 0 10h-2v-2h2a3 3 0 0 0 3-3Z" />
+              </svg>
+            </div>
+            <h1>Synapse Workspace</h1>
+          </header>
 
-          <div className="auth-tabs" role="tablist" aria-label="Authentication mode">
-            <button
-              type="button"
-              className={authMode === "login" ? "active" : ""}
-              onClick={() => {
-                setAuthMode("login");
-                setAuthError("");
-              }}
-            >
-              Sign in
+          <div className="figma-primary-actions">
+            <button className="figma-guest-button" type="button" onClick={handleGuestAccess}>
+              <svg viewBox="0 0 12 14" role="presentation" focusable="false" aria-hidden="true">
+                <path d="M6 0 0 7h4v7h4V7h4L6 0Z" />
+              </svg>
+              <span>LAUNCH INSTANT DEMO / GUEST ACCESS</span>
             </button>
-            <button
-              type="button"
-              className={authMode === "register" ? "active" : ""}
-              onClick={() => {
-                setAuthMode("register");
-                setAuthError("");
-              }}
-            >
-              Create account
-            </button>
+
+            <div className="figma-divider" aria-hidden="true">
+              <span />
+              <p>or continue with account</p>
+              <span />
+            </div>
+
+            {authMode === "login" ? (
+              <form id="account-auth-form" className="figma-auth-form" onSubmit={(event) => void handleSignIn(event)}>
+                <input
+                  id="email"
+                  className="figma-auth-input"
+                  type="email"
+                  autoComplete="email"
+                  value={authEmail}
+                  onChange={(event) => setAuthEmail(event.target.value)}
+                  placeholder="Email"
+                  required
+                />
+                <input
+                  id="password"
+                  className="figma-auth-input"
+                  type="password"
+                  autoComplete="current-password"
+                  value={authPassword}
+                  onChange={(event) => setAuthPassword(event.target.value)}
+                  placeholder="Password"
+                  required
+                />
+                {authError && <p className="auth-error">{authError}</p>}
+              </form>
+            ) : (
+              <form id="account-auth-form" className="figma-auth-form" onSubmit={(event) => void handleRegister(event)}>
+                <input
+                  id="name"
+                  className="figma-auth-input"
+                  type="text"
+                  autoComplete="name"
+                  value={authName}
+                  onChange={(event) => setAuthName(event.target.value)}
+                  placeholder="Full name"
+                  required
+                />
+                <input
+                  id="register-email"
+                  className="figma-auth-input"
+                  type="email"
+                  autoComplete="email"
+                  value={authEmail}
+                  onChange={(event) => setAuthEmail(event.target.value)}
+                  placeholder="Email"
+                  required
+                />
+                <input
+                  id="register-password"
+                  className="figma-auth-input"
+                  type="password"
+                  autoComplete="new-password"
+                  value={authPassword}
+                  onChange={(event) => setAuthPassword(event.target.value)}
+                  placeholder="Password"
+                  required
+                />
+                <input
+                  id="register-confirm-password"
+                  className="figma-auth-input"
+                  type="password"
+                  autoComplete="new-password"
+                  value={authConfirmPassword}
+                  onChange={(event) => setAuthConfirmPassword(event.target.value)}
+                  placeholder="Confirm password"
+                  required
+                />
+                {authError && <p className="auth-error">{authError}</p>}
+              </form>
+            )}
           </div>
 
-          {authMode === "login" ? (
-            <form className="auth-form" onSubmit={(event) => void handleSignIn(event)}>
-              <label className="muted" htmlFor="email">
-                Email
-              </label>
-              <input
-                id="email"
-                className="input"
-                type="email"
-                autoComplete="email"
-                value={authEmail}
-                onChange={(event) => setAuthEmail(event.target.value)}
-                placeholder="you@company.com"
-                required
-              />
-
-              <label className="muted" htmlFor="password">
-                Password
-              </label>
-              <input
-                id="password"
-                className="input"
-                type="password"
-                autoComplete="current-password"
-                value={authPassword}
-                onChange={(event) => setAuthPassword(event.target.value)}
-                placeholder="••••••••"
-                required
-              />
-
-              {authError && <p className="auth-error">{authError}</p>}
-
-              <button className="btn btn-primary" type="submit" disabled={isSigningIn}>
-                {isSigningIn ? "Signing in..." : "Sign in"}
+          <div className="figma-login-footer">
+            <div className="figma-auth-mode-row" role="tablist" aria-label="Authentication mode">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={authMode === "login"}
+                className={`figma-auth-mode-button ${authMode === "login" ? "active" : ""}`}
+                onClick={() => {
+                  setAuthMode("login");
+                  setAuthError("");
+                }}
+              >
+                SIGN IN
               </button>
-            </form>
-          ) : (
-            <form className="auth-form" onSubmit={(event) => void handleRegister(event)}>
-              <label className="muted" htmlFor="name">
-                Full name
-              </label>
-              <input
-                id="name"
-                className="input"
-                type="text"
-                autoComplete="name"
-                value={authName}
-                onChange={(event) => setAuthName(event.target.value)}
-                placeholder="Ada Lovelace"
-                required
-              />
-
-              <label className="muted" htmlFor="register-email">
-                Email
-              </label>
-              <input
-                id="register-email"
-                className="input"
-                type="email"
-                autoComplete="email"
-                value={authEmail}
-                onChange={(event) => setAuthEmail(event.target.value)}
-                placeholder="you@company.com"
-                required
-              />
-
-              <label className="muted" htmlFor="register-password">
-                Password
-              </label>
-              <input
-                id="register-password"
-                className="input"
-                type="password"
-                autoComplete="new-password"
-                value={authPassword}
-                onChange={(event) => setAuthPassword(event.target.value)}
-                placeholder="At least 6 characters"
-                required
-              />
-
-              <label className="muted" htmlFor="register-confirm-password">
-                Confirm password
-              </label>
-              <input
-                id="register-confirm-password"
-                className="input"
-                type="password"
-                autoComplete="new-password"
-                value={authConfirmPassword}
-                onChange={(event) => setAuthConfirmPassword(event.target.value)}
-                placeholder="Repeat your password"
-                required
-              />
-
-              {authError && <p className="auth-error">{authError}</p>}
-
-              <button className="btn btn-primary" type="submit" disabled={isSigningIn}>
-                {isSigningIn ? "Creating account..." : "Create account"}
+              <button
+                type="button"
+                role="tab"
+                aria-selected={authMode === "register"}
+                className={`figma-auth-mode-button ${authMode === "register" ? "active" : ""}`}
+                onClick={() => {
+                  setAuthMode("register");
+                  setAuthError("");
+                }}
+              >
+                REGISTER
               </button>
-            </form>
-          )}
+            </div>
 
-          <div className="auth-divider" aria-hidden="true">
-            <span>or</span>
+            <button className="figma-footer-link" form="account-auth-form" type="submit" disabled={isSigningIn}>
+              {isSigningIn ? "PROCESSING..." : authMode === "login" ? "SIGN IN" : "REGISTER"}
+            </button>
           </div>
-
-          <button className="btn" type="button" onClick={handleGuestAccess}>
-            Continue as guest
-          </button>
         </section>
       </main>
     );
@@ -1307,7 +1294,7 @@ export default function HomePage() {
               Shared {activePermission}
             </span>
           )}
-          <button className="btn" onClick={clearSession}>
+          <button className="btn btn-signout" onClick={clearSession}>
             Sign out
           </button>
           <span className="badge">{status}</span>
@@ -1317,79 +1304,85 @@ export default function HomePage() {
 
       <div className="layout-grid">
         <aside className="panel sidebar">
-          <div className="row">
-            <button className="btn btn-primary" onClick={() => void handleCreateBoard()} disabled={isCreatingBoard}>
-              {isCreatingBoard ? "Creating..." : "New board"}
-            </button>
-            <button className="btn" onClick={() => void loadBoards()} disabled={isBoardsLoading}>
-              {isBoardsLoading ? "Refreshing..." : "Refresh"}
-            </button>
-          </div>
+          <section className="panel-section">
+            <p className="section-title">Boards</p>
+            <div className="row">
+              <button className="btn btn-primary" onClick={() => void handleCreateBoard()} disabled={isCreatingBoard}>
+                {isCreatingBoard ? "Creating..." : "New board"}
+              </button>
+              <button className="btn" onClick={() => void loadBoards()} disabled={isBoardsLoading}>
+                {isBoardsLoading ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
 
-          <div className="note-list" style={{ marginTop: 10, maxHeight: 220 }}>
-            {boards.map((board) => (
-              <article
-                key={board.id}
-                className={`note-card ${board.id === activeBoardId ? "active" : ""}`}
-                onClick={() => {
-                  setActiveBoardId(board.id);
+            <div className="note-list board-list">
+              {boards.map((board) => (
+                <article
+                  key={board.id}
+                  className={`note-card ${board.id === activeBoardId ? "active" : ""}`}
+                  onClick={() => {
+                    setActiveBoardId(board.id);
 
-                  if (board.ownerId === sessionId) {
-                    setActiveShareToken(null);
-                    setActivePermission("edit");
-                  }
-                }}
+                    if (board.ownerId === sessionId) {
+                      setActiveShareToken(null);
+                      setActivePermission("edit");
+                    }
+                  }}
+                >
+                  <p className="note-title">{board.name}</p>
+                  <div className="meta-row">
+                    <span className="pill">{board.ownerId === sessionId ? "Owned" : "Shared"}</span>
+                    {board.shareToken && <span className="pill">Link ready</span>}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="panel-section">
+            <p className="section-title">Access</p>
+            <div className="row">
+              <button
+                className="btn"
+                onClick={() => void handleRenameBoard()}
+                disabled={!activeBoard || activeBoard.ownerId !== sessionId}
               >
-                <p className="note-title">{board.name}</p>
-                <div className="meta-row">
-                  <span className="pill">{board.ownerId === sessionId ? "Owned" : "Shared"}</span>
-                  {board.shareToken && <span className="pill">Link ready</span>}
-                </div>
-              </article>
-            ))}
-          </div>
+                Rename board
+              </button>
+              <button
+                className="btn"
+                onClick={() => void handleGrantAccessByEmail()}
+                disabled={!activeBoard || activeBoard.ownerId !== sessionId}
+              >
+                Grant by email
+              </button>
+            </div>
 
-          <div className="row" style={{ marginTop: 10 }}>
-            <button
-              className="btn"
-              onClick={() => void handleRenameBoard()}
-              disabled={!activeBoard || activeBoard.ownerId !== sessionId}
-            >
-              Rename board
-            </button>
-            <button
-              className="btn"
-              onClick={() => void handleGrantAccessByEmail()}
-              disabled={!activeBoard || activeBoard.ownerId !== sessionId}
-            >
-              Grant by email
-            </button>
-          </div>
+            <div className="row" style={{ marginTop: 8 }}>
+              <button className="btn" onClick={() => void handleShareBoard()} disabled={!activeBoard}>
+                Share board
+              </button>
+              <button
+                className="btn"
+                onClick={() => void handleCopyExistingShareLink()}
+                disabled={!activeBoard?.shareToken}
+              >
+                Copy link again
+              </button>
+            </div>
 
-          <div className="row" style={{ marginTop: 8 }}>
-            <button className="btn" onClick={() => void handleShareBoard()} disabled={!activeBoard}>
-              Share board
-            </button>
-            <button
-              className="btn"
-              onClick={() => void handleCopyExistingShareLink()}
-              disabled={!activeBoard?.shareToken}
-            >
-              Copy link again
-            </button>
-          </div>
+            {activeBoard?.shareToken && (
+              <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
+                Share link active ({activeBoard.sharePermission}) • no expiration configured.
+              </p>
+            )}
 
-          {activeBoard?.shareToken && (
-            <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
-              Share link active ({activeBoard.sharePermission}) • no expiration configured.
-            </p>
-          )}
-
-          {!activeBoard?.shareToken && (
-            <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
-              Create a share link first. Once created, you can copy it again anytime.
-            </p>
-          )}
+            {!activeBoard?.shareToken && (
+              <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
+                Create a share link first. Once created, you can copy it again anytime.
+              </p>
+            )}
+          </section>
 
           {activeBoard?.ownerId === sessionId && (
             <div className="collaborators-box">
@@ -1431,17 +1424,19 @@ export default function HomePage() {
             </div>
           )}
 
-          <div className="row" style={{ marginTop: 8 }}>
-            <button
-              className="btn"
-              onClick={() => void handleCreateNote()}
-              disabled={!activeBoard || !canEditBoard || isCreating}
-            >
-              {isCreating ? "Creating..." : "New note"}
-            </button>
-          </div>
+          <section className="panel-section">
+            <p className="section-title">Search & Filters</p>
+            <div className="row" style={{ marginTop: 8 }}>
+              <button
+                className="btn"
+                onClick={() => void handleCreateNote()}
+                disabled={!activeBoard || !canEditBoard || isCreating}
+              >
+                {isCreating ? "Creating..." : "New note"}
+              </button>
+            </div>
 
-          <div style={{ marginTop: 10 }}>
+            <div style={{ marginTop: 10 }}>
             <input
               className="search"
               value={searchText}
@@ -1528,9 +1523,12 @@ export default function HomePage() {
                 {isReindexing ? "Reindexing..." : "Retry Pending Embeddings"}
               </button>
             </div>
-          </div>
+            </div>
+          </section>
 
-          <div className="note-list">
+          <section className="panel-section">
+            <p className="section-title">Notes</p>
+            <div className="note-list notes-list">
             {isLoading && <p className="muted">Loading notes...</p>}
             {!isLoading && visibleNotes.length === 0 && <p className="muted">No notes in this board yet.</p>}
 
@@ -1551,7 +1549,8 @@ export default function HomePage() {
                 </div>
               </article>
             ))}
-          </div>
+            </div>
+          </section>
         </aside>
 
         <section className="panel editor">
