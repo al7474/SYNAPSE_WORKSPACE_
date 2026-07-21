@@ -1,5 +1,6 @@
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/embeddings";
 const MODEL = process.env.OPENROUTER_EMBEDDING_MODEL || "nvidia/llama-nemotron-embed-vl-1b-v2:free";
+const EMBEDDING_DIMENSION = Number(process.env.OPENROUTER_EMBEDDING_DIMENSION || 1024);
 const INPUT_TEXT = process.env.OPENROUTER_TEST_INPUT || "Hello Synapse Workspace";
 
 async function main() {
@@ -20,6 +21,7 @@ async function main() {
       body: JSON.stringify({
         model: MODEL,
         input: INPUT_TEXT,
+        dimensions: EMBEDDING_DIMENSION,
       }),
     });
 
@@ -41,12 +43,18 @@ async function main() {
       process.exit(1);
     }
 
+    if (embedding.length !== EMBEDDING_DIMENSION) {
+      console.error(`Unexpected vector length: expected ${EMBEDDING_DIMENSION}, received ${embedding.length}.`);
+      process.exit(1);
+    }
+
     const firstFive = embedding.slice(0, 5);
     const firstFiveAreNumbers = firstFive.every(
       (value) => typeof value === "number" && Number.isFinite(value)
     );
 
     console.log("Model:", MODEL);
+    console.log("Requested dimension:", EMBEDDING_DIMENSION);
     console.log("Input:", INPUT_TEXT);
     console.log("First 5 values:", firstFive);
     console.log("Vector length:", embedding.length);

@@ -1,4 +1,4 @@
-import { DEFAULT_MODEL, OPENROUTER_URL } from "./constants.js";
+import { DEFAULT_MODEL, EMBEDDING_DIMENSION, OPENROUTER_URL } from "./constants.js";
 
 export function toPgvectorLiteral(vector) {
   return `[${vector.join(",")}]`;
@@ -8,6 +8,7 @@ export async function fetchEmbedding({
   input,
   apiKey = process.env.OPENROUTER_API_KEY,
   model = DEFAULT_MODEL,
+  dimensions = EMBEDDING_DIMENSION,
   timeoutMs = 15000,
 }) {
   if (!apiKey) {
@@ -24,7 +25,7 @@ export async function fetchEmbedding({
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({ model, input }),
+      body: JSON.stringify({ model, input, dimensions }),
       signal: controller.signal,
     });
 
@@ -38,6 +39,10 @@ export async function fetchEmbedding({
 
     if (!Array.isArray(embedding) || embedding.length === 0) {
       throw new Error(`Invalid embedding payload: ${JSON.stringify(payload)}`);
+    }
+
+    if (embedding.length !== dimensions) {
+      throw new Error(`Embedding dimension mismatch: expected ${dimensions}, received ${embedding.length}`);
     }
 
     return embedding;

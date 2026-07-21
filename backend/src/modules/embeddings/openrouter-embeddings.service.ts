@@ -5,7 +5,8 @@ type EmbeddingsApiResponse = {
 export class OpenRouterEmbeddingsService {
   constructor(
     private readonly apiKey: string,
-    private readonly model: string
+    private readonly model: string,
+    private readonly expectedDimension: number
   ) {}
 
   isConfigured(): boolean {
@@ -26,6 +27,7 @@ export class OpenRouterEmbeddingsService {
       body: JSON.stringify({
         model: this.model,
         input,
+        dimensions: this.expectedDimension,
       }),
     });
 
@@ -39,6 +41,12 @@ export class OpenRouterEmbeddingsService {
 
     if (!Array.isArray(embedding) || embedding.length === 0) {
       throw new Error("Invalid embeddings payload from OpenRouter");
+    }
+
+    if (embedding.length !== this.expectedDimension) {
+      throw new Error(
+        `Embedding dimension mismatch: expected ${this.expectedDimension}, received ${embedding.length}`
+      );
     }
 
     return embedding;

@@ -46,7 +46,8 @@ async function bootstrap() {
   const pubSub = createPubSub<{ NOTE_UPDATED: [Note] }>();
   const embeddingsService = new OpenRouterEmbeddingsService(
     env.openRouterApiKey,
-    env.embeddingModel
+    env.embeddingModel,
+    env.embeddingDimension
   );
   const notesService = new NotesService(pool, embeddingsService);
 

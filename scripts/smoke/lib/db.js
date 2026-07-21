@@ -47,7 +47,7 @@ export async function ensureNotesSchema(client, tableName = DEFAULT_NOTES_TABLE)
       id BIGSERIAL PRIMARY KEY,
       title TEXT NOT NULL,
       content TEXT NOT NULL,
-      embedding VECTOR(2048),
+      embedding VECTOR(1024),
       embedding_pending BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

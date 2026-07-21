@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FileText, Folder, LogOut, Menu, Plus, Search, Settings, Sparkles, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -142,6 +143,7 @@ export default function HomePage() {
   const [authError, setAuthError] = useState("");
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [isHydratingSession, setIsHydratingSession] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
 
   const [boards, setBoards] = useState<Board[]>([]);
@@ -1162,27 +1164,27 @@ export default function HomePage() {
 
   if (!sessionId || !sessionMode) {
     return (
-      <main className="grid min-h-screen place-items-center bg-[#040608] p-4 text-white">
-        <section className="flex h-[472px] w-full max-w-[400px] flex-col border border-white/10 bg-[#0b0d10] px-[25px] py-[25px]">
-          <header className="mx-auto flex w-[350px] flex-col items-center gap-4">
+      <main className="flex min-h-screen items-start justify-center overflow-y-auto bg-[#040608] p-3 text-white sm:items-center sm:p-4">
+        <section className="my-3 flex min-h-[472px] w-full max-w-[400px] flex-col border border-white/10 bg-[#0b0d10] px-4 py-5 sm:my-0 sm:px-6 sm:py-6">
+          <header className="mx-auto flex w-full max-w-[350px] flex-col items-center gap-4">
             <div className="grid h-12 w-12 place-items-center border border-white/15 bg-[#090b0e]">
               <div className="grid h-[30px] w-[30px] place-items-center border border-white/10 bg-[#12161b] text-[10px] tracking-[0.1em] text-white/70">
                 SY
               </div>
             </div>
-            <h1 className="text-center text-[30px] font-normal leading-7 text-white">Synapse Workspace</h1>
+            <h1 className="text-center text-2xl font-normal leading-7 text-white sm:text-[30px]">Synapse Workspace</h1>
           </header>
 
-          <div className="mt-12 flex w-[350px] flex-col gap-6">
+          <div className="mt-10 flex w-full max-w-[350px] flex-col gap-6 self-center">
             <Button
-              className="h-[61px] w-full rounded-none bg-white font-semibold uppercase tracking-[0.18em] text-[#1c1b1b] hover:bg-white/95"
+              className="min-h-[61px] h-auto w-full rounded-none bg-white px-3 py-3 font-semibold uppercase tracking-[0.14em] text-[#1c1b1b] hover:bg-white/95 sm:px-4 sm:tracking-[0.18em]"
               onClick={handleGuestAccess}
             >
-              <span aria-hidden="true" className="text-base">ϟ</span>
-              <span className="text-[11px] leading-4">Launch instant demo / guest access</span>
+              <span aria-hidden="true" className="shrink-0 text-base">ϟ</span>
+              <span className="min-w-0 text-center text-[11px] leading-4">Launch instant demo / guest access</span>
             </Button>
 
-            <div className="flex items-center gap-4 text-[12px] text-[#8f949b]">
+            <div className="flex items-center gap-2 text-[11px] text-[#8f949b] sm:gap-4 sm:text-xs">
               <div className="h-px flex-1 bg-white/10" />
               <span className="whitespace-nowrap">or continue with account</span>
               <div className="h-px flex-1 bg-white/10" />
@@ -1197,7 +1199,7 @@ export default function HomePage() {
                   value={authEmail}
                   onChange={(event) => setAuthEmail(event.target.value)}
                   placeholder="Email"
-                  className="h-[38px] rounded-none border-white/15 bg-transparent px-4 text-sm text-white placeholder:text-[#4f555d]"
+                  className="h-[38px] min-w-0 rounded-none border-white/15 bg-transparent px-3 text-sm text-white placeholder:text-[#4f555d] sm:px-4"
                   required
                 />
                 <Input
@@ -1207,10 +1209,10 @@ export default function HomePage() {
                   value={authPassword}
                   onChange={(event) => setAuthPassword(event.target.value)}
                   placeholder="Password"
-                  className="h-[38px] rounded-none border-white/15 bg-transparent px-4 text-sm text-white placeholder:text-[#4f555d]"
+                  className="h-[38px] min-w-0 rounded-none border-white/15 bg-transparent px-3 text-sm text-white placeholder:text-[#4f555d] sm:px-4"
                   required
                 />
-                {authError && <p className="text-sm text-red-300">{authError}</p>}
+                {authError && <p className="break-words text-sm text-red-300">{authError}</p>}
               </form>
             ) : (
               <form id="account-auth-form" className="space-y-4" onSubmit={(event) => void handleRegister(event)}>
@@ -1221,7 +1223,7 @@ export default function HomePage() {
                   value={authName}
                   onChange={(event) => setAuthName(event.target.value)}
                   placeholder="Full name"
-                  className="h-[38px] rounded-none border-white/15 bg-transparent px-4 text-sm text-white placeholder:text-[#4f555d]"
+                  className="h-[38px] min-w-0 rounded-none border-white/15 bg-transparent px-3 text-sm text-white placeholder:text-[#4f555d] sm:px-4"
                   required
                 />
                 <Input
@@ -1231,7 +1233,7 @@ export default function HomePage() {
                   value={authEmail}
                   onChange={(event) => setAuthEmail(event.target.value)}
                   placeholder="Email"
-                  className="h-[38px] rounded-none border-white/15 bg-transparent px-4 text-sm text-white placeholder:text-[#4f555d]"
+                  className="h-[38px] min-w-0 rounded-none border-white/15 bg-transparent px-3 text-sm text-white placeholder:text-[#4f555d] sm:px-4"
                   required
                 />
                 <Input
@@ -1241,7 +1243,7 @@ export default function HomePage() {
                   value={authPassword}
                   onChange={(event) => setAuthPassword(event.target.value)}
                   placeholder="Password"
-                  className="h-[38px] rounded-none border-white/15 bg-transparent px-4 text-sm text-white placeholder:text-[#4f555d]"
+                  className="h-[38px] min-w-0 rounded-none border-white/15 bg-transparent px-3 text-sm text-white placeholder:text-[#4f555d] sm:px-4"
                   required
                 />
                 <Input
@@ -1251,15 +1253,15 @@ export default function HomePage() {
                   value={authConfirmPassword}
                   onChange={(event) => setAuthConfirmPassword(event.target.value)}
                   placeholder="Confirm password"
-                  className="h-[38px] rounded-none border-white/15 bg-transparent px-4 text-sm text-white placeholder:text-[#4f555d]"
+                  className="h-[38px] min-w-0 rounded-none border-white/15 bg-transparent px-3 text-sm text-white placeholder:text-[#4f555d] sm:px-4"
                   required
                 />
-                {authError && <p className="text-sm text-red-300">{authError}</p>}
+                {authError && <p className="break-words text-sm text-red-300">{authError}</p>}
               </form>
             )}
           </div>
 
-          <div className="mt-auto flex w-[350px] items-center justify-center gap-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[#c9c9c9]">
+          <div className="mt-6 flex w-full max-w-[350px] flex-wrap items-center justify-center gap-x-2 gap-y-1 self-center pb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#c9c9c9] sm:text-[11px] sm:tracking-[0.22em]">
             <button
               type="button"
               className={authMode === "login" ? "text-white" : "text-[#8f949b]"}
@@ -1291,117 +1293,139 @@ export default function HomePage() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col bg-black font-mono text-white">
-      <header className="flex h-[52px] items-center justify-between border-b border-white/15 bg-[#05070a] px-4">
-        <div className="flex items-center gap-3 text-sm font-semibold">
-          <div className="grid h-7 w-7 place-items-center border border-white/20 bg-[#0f1217] text-[10px] text-white/70">SY</div>
-          <span>Synapse Workspace</span>
+    <main className="flex min-h-screen min-w-0 flex-col overflow-x-hidden bg-[#0e0e0e] font-mono text-white">
+      <header className="z-50 flex h-[51px] shrink-0 items-center justify-between border-b border-[#444748] bg-[#0e0e0e] px-3 sm:px-6">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-4">
+          <button
+            type="button"
+            className="grid h-8 w-8 shrink-0 place-items-center border border-[#444748] text-[#c4c7c8] lg:hidden"
+            onClick={() => setIsSidebarOpen((isOpen) => !isOpen)}
+            aria-expanded={isSidebarOpen}
+            aria-controls="workspace-sidebar"
+            aria-label={isSidebarOpen ? "Close workspace navigation" : "Open workspace navigation"}
+          >
+            {isSidebarOpen ? <X size={17} /> : <Menu size={17} />}
+          </button>
+          <div className="grid h-8 w-8 place-items-center border border-[#353535] bg-[#1f2020] text-[10px] tracking-widest text-[#c4c7c8]">SY</div>
+          <strong className="truncate text-sm font-medium sm:text-base">Synapse Workspace</strong>
         </div>
-        <div className="flex items-center gap-4 text-sm text-[#b2b8bf]">
-          <a href="#" className="hover:text-white" onClick={(event) => event.preventDefault()}>Docs</a>
-          <a href="#" className="hover:text-white" onClick={(event) => event.preventDefault()}>Pricing</a>
-          <a href="#" className="hover:text-white" onClick={(event) => event.preventDefault()}>Changelog</a>
-          <button type="button" className="border border-white/20 px-4 py-1 text-white/90" onClick={clearSession}>Sign In</button>
-          <button type="button" className="bg-white px-4 py-1 font-medium text-black" onClick={handleGuestAccess}>Launch Instant Demo</button>
-        </div>
+        <button
+          type="button"
+          className="flex h-8 shrink-0 items-center gap-2 border border-[#444748] px-2 text-sm text-[#c4c7c8] hover:text-white sm:px-3"
+          onClick={clearSession}
+          aria-label="Log out"
+          title="Log out"
+        >
+          <LogOut size={16} />
+          <span className="hidden sm:inline">Log Out</span>
+        </button>
       </header>
 
-      <div className="grid min-h-[calc(100vh-52px)] grid-cols-[180px_1fr]">
-        <aside className="flex flex-col border-r border-white/15 bg-[#05070a]">
-          <div className="p-2">
-            <button
-              type="button"
-              className="flex h-9 w-full items-center justify-between border border-white/20 bg-transparent px-2 text-left text-sm text-[#c4c9d0]"
-              onClick={() => setSearchText("")}
-            >
-              <span>Search...</span>
-              <span className="border border-white/20 px-1 text-[10px]">⌘K</span>
+      <div className="relative flex min-h-[calc(100vh-51px)] min-w-0 flex-1">
+        {isSidebarOpen && (
+          <button
+            type="button"
+            className="fixed inset-x-0 bottom-0 top-[51px] z-30 bg-black/70 lg:hidden"
+            onClick={() => setIsSidebarOpen(false)}
+            aria-label="Close workspace navigation"
+          />
+        )}
+
+        <aside
+          id="workspace-sidebar"
+          className={
+            isSidebarOpen
+              ? "fixed inset-x-auto bottom-0 left-0 top-[51px] z-40 flex w-[88vw] max-w-[400px] flex-col border-r border-[#444748] bg-[#0e0e0e] shadow-2xl lg:static lg:z-auto lg:w-[400px] lg:shrink-0 lg:shadow-none"
+              : "hidden flex-col border-r border-[#444748] bg-[#0e0e0e] lg:flex lg:w-[400px] lg:shrink-0"
+          }
+        >
+          <div className="h-[68px] border-b border-[#2f3131] p-4">
+            <button type="button" className="flex h-9 w-full items-center justify-between border border-[#444748] px-2 text-sm text-[#c4c7c8]" onClick={() => setSearchText("")}>
+              <span className="flex items-center gap-2"><Search size={16} /> Search...</span>
+              <span className="border border-[#444748] px-1 text-xs">⌘K</span>
             </button>
           </div>
 
-          <p className="px-3 pb-2 text-xs tracking-[0.2em] text-[#7b828b]">WORKSPACES</p>
-          <div className="flex-1 space-y-1 overflow-y-auto px-1 pb-4">
-            {boards.map((board) => (
-              <div key={board.id} className="flex items-center gap-1">
-                <button
-                  type="button"
-                  className={
-                    board.id === activeBoardId
-                      ? "flex h-9 flex-1 items-center gap-1.5 border border-white/25 bg-[#0f1318] px-2 text-left text-sm text-white"
-                      : "flex h-9 flex-1 items-center gap-1.5 border border-transparent px-2 text-left text-sm text-[#a9b0b8] hover:border-white/15"
-                  }
-                  onClick={() => {
-                    setActiveBoardId(board.id);
-                    if (board.ownerId === sessionId) {
-                      setActiveShareToken(null);
-                      setActivePermission("edit");
-                    }
-                  }}
-                >
-                  <span className="text-xs">□</span>
-                  <span className="truncate">{board.name}</span>
-                </button>
-                {board.ownerId === sessionId && (
+          <nav className="flex-1 overflow-y-auto p-2">
+            <p className="px-2 pb-2 text-xs tracking-[0.2em] text-[#8e9192]">WORKSPACES</p>
+            <div className="space-y-1">
+              {boards.map((board, index) => (
+                <div key={board.id} className="flex items-center gap-1">
                   <button
                     type="button"
-                    className="h-9 w-8 border border-white/20 text-[#efb3af] hover:bg-[#32171b]"
-                    onClick={() => void handleDeleteBoard(board)}
-                    disabled={deletingBoardId === board.id}
-                    aria-label={`Delete board ${board.name}`}
-                    title={`Delete board ${board.name}`}
+                    className={
+                      board.id === activeBoardId
+                        ? "flex h-10 flex-1 items-center gap-2 border border-[#444748] bg-black px-2 text-left text-sm text-white"
+                        : "flex h-10 flex-1 items-center gap-2 px-2 text-left text-sm text-[#c4c7c8] hover:border hover:border-[#2f3131]"
+                    }
+                    onClick={() => {
+                      setActiveBoardId(board.id);
+                      setIsSidebarOpen(false);
+                      if (board.ownerId === sessionId) {
+                        setActiveShareToken(null);
+                        setActivePermission("edit");
+                      }
+                    }}
                   >
-                    {deletingBoardId === board.id ? "..." : "×"}
+                    {index % 2 === 0 ? <Folder size={16} /> : <FileText size={16} />}
+                    <span className="truncate">{board.name}</span>
                   </button>
-                )}
-              </div>
-            ))}
+                  {board.ownerId === sessionId && (
+                    <button
+                      type="button"
+                      className="grid h-10 w-9 place-items-center border border-[#444748] text-[#efb3af] hover:bg-[#2a181a]"
+                      onClick={() => void handleDeleteBoard(board)}
+                      disabled={deletingBoardId === board.id}
+                      aria-label={`Delete board ${board.name}`}
+                      title={`Delete board ${board.name}`}
+                    >
+                      {deletingBoardId === board.id ? "..." : "×"}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
 
             <button
               type="button"
-              className="mt-2 flex h-8 w-full items-center gap-2 border border-dashed border-white/15 px-2 text-left text-sm text-[#808790]"
+              className="mt-2 flex h-[42px] w-full items-center gap-2 border border-dashed border-[#444748] px-2 text-sm text-[#8e9192]"
               onClick={() => void handleCreateBoard()}
               disabled={isCreatingBoard}
             >
-              <span>+</span>
-              <span>{isCreatingBoard ? "Creating..." : "New Board"}</span>
+              <Plus size={14} /> {isCreatingBoard ? "Creating..." : "New Board"}
             </button>
-          </div>
+          </nav>
 
-          <div className="mt-auto border-t border-white/15 p-3">
-            <div className="mb-2 flex items-center gap-2 text-sm text-[#d2d7dd]">
-              <span className="grid h-6 w-6 place-items-center bg-[#23262b] text-xs">GS</span>
+          <div className="border-t border-[#444748] p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <span className="grid h-8 w-8 place-items-center bg-[#1f2020] text-xs text-[#c4c7c8]">GS</span>
               <div>
-                <p>{sessionMode === "user" ? "User Session" : "Guest Session"}</p>
-                <p className="text-[11px] text-[#7d838b]">{currentUserEmail || sessionId.slice(0, 12)}</p>
+                <p className="text-sm text-white">{sessionMode === "user" ? "User Session" : "Guest Session"}</p>
+                <p className="text-xs text-[#8e9192]">{currentUserEmail || sessionId.slice(0, 12)}</p>
               </div>
             </div>
-            <button className="text-sm text-[#9ca3ac] hover:text-white" onClick={clearSession}>Log Out</button>
+            <p className="text-xs text-[#8e9192]">Workspace controls available in top bar.</p>
           </div>
         </aside>
 
-        <section className="flex min-h-0 flex-col">
-          <div className="flex h-10 items-center justify-between border-b border-white/15 px-4">
-            <div className="flex h-8 w-full max-w-[640px] items-center gap-2 border border-white/15 px-2 text-sm text-[#8d949d]">
-              <span>⌕</span>
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="flex min-h-14 flex-wrap items-center gap-3 border-b border-[#444748] px-3 py-3 sm:px-6 sm:py-2">
+            <div className="flex h-10 w-full min-w-0 flex-1 items-center gap-3 border border-[#2f3131] bg-black px-3 sm:w-auto">
+              <Search size={18} className="text-[#8e9192]" />
               <input
                 value={searchText}
                 onChange={(event) => setSearchText(event.target.value)}
                 placeholder="Search boards or notes..."
-                className="w-full bg-transparent text-[#d9dee3] outline-none placeholder:text-[#5e6670]"
+                className="min-w-0 w-full bg-transparent text-base text-white outline-none placeholder:text-[#444748]"
               />
             </div>
-            <div className="ml-4 flex items-center gap-2">
-              <button
-                type="button"
-                className="h-8 w-8 border border-white/20 text-[#9ba2ab]"
-                onClick={() => void loadBoards()}
-                title="Refresh"
-              >
-                {isBoardsLoading ? "..." : "⚙"}
+            <div className="flex w-full shrink-0 items-center justify-end gap-2 sm:w-auto sm:gap-4">
+              <button type="button" className="grid h-9 w-9 place-items-center text-[#8e9192]" onClick={() => void loadBoards()} title="Refresh boards">
+                {isBoardsLoading ? "..." : <Settings size={18} />}
               </button>
               <button
                 type="button"
-                className="h-8 border border-white/20 bg-white px-3 text-sm font-medium text-black disabled:opacity-50"
+                className="h-8 whitespace-nowrap border border-[#c4c7c8] bg-white px-3 text-xs font-medium text-[#2f3131] disabled:opacity-50 sm:px-4 sm:text-sm"
                 onClick={() => void handleShareBoard()}
                 disabled={!activeBoard}
               >
@@ -1410,36 +1434,33 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-4 py-5">
-            <p className="text-xl text-[#8a919a]">Project / Workspaces /</p>
-            <h2 className="mb-8 text-2xl font-semibold text-white">{activeBoard ? activeBoard.name : "Select a workspace"}</h2>
+          <div className="min-w-0 flex-1 overflow-y-auto px-3 py-4 sm:px-6 sm:py-6">
+            <p className="text-base text-[#8e9192]">Project / Workspaces /</p>
+            <h2 className="mb-6 mt-1 break-words text-xl text-white sm:mb-8 sm:text-2xl">{activeBoard ? activeBoard.name : "Select a workspace"}</h2>
 
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
-              {isLoading && <p className="text-[#94a0ad]">Loading notes...</p>}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              {isLoading && <p className="text-[#9aa7bf]">Loading notes...</p>}
 
               {!isLoading && visibleNotes.map((note) => {
-                const preview = (note.content || "No content yet").replace(/\s+/g, " ").trim().slice(0, 150);
+                const preview = (note.content || "No content yet").replace(/\s+/g, " ").trim().slice(0, 160);
                 return (
                   <article
                     key={note.id}
                     className={
                       note.id === selectedId
-                        ? "flex min-h-[210px] cursor-pointer flex-col border border-white/25 bg-[#0c1015] p-3"
-                        : "flex min-h-[210px] cursor-pointer flex-col border border-white/15 bg-[#090d12] p-3"
+                        ? "flex h-[220px] cursor-pointer flex-col border border-[#444748] bg-[#0e0e0e] p-3 shadow-[inset_0_0_0_1px_#ffffff10] sm:h-[249px] sm:p-4"
+                        : "flex h-[220px] cursor-pointer flex-col border border-[#2f3131] bg-[#0e0e0e] p-3 sm:h-[249px] sm:p-4"
                     }
                     onClick={() => setSelectedId(note.id)}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="bg-[#262a31] px-2 py-1 text-sm text-[#9ca5af]">{note.embeddingPending ? "draft" : "active"}</span>
-                      <span className="text-[#7f8790]">{note.embeddingPending ? "◌" : "◈"}</span>
+                      <span className="bg-[#353535] px-2 py-1 text-sm text-[#c4c7c8]">{note.embeddingPending ? "draft" : "active"}</span>
+                      {note.embeddingPending ? <Sparkles size={16} className="text-[#ffd27c]" /> : <FileText size={16} className="text-[#8e9192]" />}
                     </div>
-                    <h3 className="mt-3 text-[28px] leading-none text-white">{note.title || "Untitled"}</h3>
-                    <p className="mt-3 text-[30px] leading-8 text-[#b8bec7]">
-                      {preview}
-                      {(note.content || "").length > 150 ? "..." : ""}
-                    </p>
-                    <div className="mt-auto flex items-center justify-between border-t border-white/15 pt-3 text-[30px] text-[#8f97a1]">
-                      <span>Updated {note.embeddingPending ? "queued" : "live"}</span>
+                    <h3 className="mb-2 mt-3 line-clamp-2 break-words text-sm text-white sm:mt-4 sm:text-base">{note.title || "Untitled"}</h3>
+                    <p className="line-clamp-3 text-sm leading-5 text-[#c4c7c8] sm:text-base sm:leading-6">{preview}{(note.content || "").length > 160 ? "..." : ""}</p>
+                    <div className="mt-auto flex items-center justify-between border-t border-[#444748] pt-3 text-sm text-[#8e9192]">
+                      <span>{note.embeddingPending ? "Index pending" : "Indexed"}</span>
                       <span>
                         {semanticResults && note.semanticScore !== null && note.semanticScore !== undefined
                           ? `${(note.semanticScore * 100).toFixed(1)}%`
@@ -1453,21 +1474,21 @@ export default function HomePage() {
               {!isLoading && canEditBoard && (
                 <button
                   type="button"
-                  className="grid min-h-[210px] place-items-center border border-white/10 text-[#8e959f] hover:border-white/20"
+                  className="grid h-[220px] place-items-center border border-[#2f3131] bg-transparent text-[#8e9192] hover:border-[#444748] sm:h-[249px]"
                   onClick={() => void handleCreateNote()}
                 >
                   <div className="text-center">
-                    <p className="text-5xl">+</p>
-                    <p className="text-2xl">{isCreating ? "Creating..." : "Create New Note"}</p>
+                    <Plus size={18} className="mx-auto mb-2" />
+                    <p className="text-base tracking-[0.02em]">{isCreating ? "Creating..." : "Create New Note"}</p>
                   </div>
                 </button>
               )}
             </div>
 
             {selectedId && (
-              <div className="mt-6 border border-white/15 bg-[#090d12] p-3">
-                <div className="mb-2 flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-xs text-[#a8afb8]">
+              <div className="mt-5 min-w-0 border border-[#444748] bg-[#0e0e0e] p-3 sm:p-4">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-[#9aa7bf]">
                     <span>{selectedNote?.embeddingPending ? "AI indexing queued" : "AI indexed"}</span>
                     <span>•</span>
                     <span>Last saved: {lastSavedAt || "-"}</span>
@@ -1475,7 +1496,7 @@ export default function HomePage() {
                   </div>
                   <button
                     type="button"
-                    className="border border-[#5f2d34] px-2 py-1 text-xs text-[#efb3af] disabled:opacity-60"
+                    className="shrink-0 border border-[#6a3038] px-3 py-1 text-xs text-[#efb3af] disabled:opacity-60"
                     onClick={() => setShowDeleteConfirm(true)}
                     disabled={isDeleting || !canEditBoard}
                   >
@@ -1488,10 +1509,10 @@ export default function HomePage() {
                   onChange={(event) => setDraftTitle(event.target.value)}
                   placeholder="Note title"
                   disabled={!canEditBoard}
-                  className="mb-2 h-9 w-full border border-white/15 bg-transparent px-2 text-sm text-white outline-none placeholder:text-[#5f6771]"
+                  className="mb-2 h-10 min-w-0 w-full border border-[#444748] bg-[#090b10] px-3 text-sm text-white outline-none placeholder:text-[#5f6771]"
                 />
 
-                <div className="border border-white/15 bg-black/40 p-2">
+                <div className="min-w-0 overflow-hidden border border-[#444748] bg-[#090b10] p-2">
                   <BlockNoteEditorClient
                     noteId={selectedId}
                     markdown={draftContent}
@@ -1505,9 +1526,9 @@ export default function HomePage() {
             )}
           </div>
 
-          <footer className="flex h-12 items-center justify-between border-t border-white/15 px-4 text-sm text-[#8f97a1]">
-            <p>Synapse © 2024 Built for performance.</p>
-            <div className="flex gap-6">
+          <footer className="flex min-h-[57px] flex-col items-start justify-center gap-2 border-t border-[#444748] px-3 py-4 text-xs text-[#8e9192] sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-0 sm:text-sm">
+            <p><strong>Synapse</strong> © 2026 Built for performance.</p>
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
               <a href="#" onClick={(event) => event.preventDefault()}>Status</a>
               <a href="#" onClick={(event) => event.preventDefault()}>Privacy</a>
               <a href="#" onClick={(event) => event.preventDefault()}>Terms</a>
@@ -1519,13 +1540,13 @@ export default function HomePage() {
 
       {showDeleteConfirm && (
         <div className="fixed inset-0 grid place-items-center bg-background/80 p-4 backdrop-blur-sm">
-          <Card className="w-full max-w-md">
+          <Card className="max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto">
             <CardHeader>
               <CardTitle>Delete this note?</CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">This action removes the note permanently.</p>
-              <div className="mt-4 flex gap-2">
+              <div className="mt-4 flex flex-wrap gap-2">
                 <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>
                   Cancel
                 </Button>

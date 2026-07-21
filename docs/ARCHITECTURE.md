@@ -2,14 +2,14 @@
 
 ## Data contract (frozen)
 
-- Embedding dimension: `2048`
+- Embedding dimension: `1024`
 - Notes table: `notes`
 - Columns required by contract:
-  - `embedding VECTOR(2048)`
+  - `embedding VECTOR(1024)`
   - `embedding_pending BOOLEAN NOT NULL DEFAULT FALSE`
   - `owner_id TEXT NOT NULL`
 
-Reference migration: `backend/db/migrations/0001_create_notes.sql`.
+Reference migration: `backend/db/migrations/0005_align_embedding_dimension_to_1024.sql`.
 
 ## Monorepo structure
 

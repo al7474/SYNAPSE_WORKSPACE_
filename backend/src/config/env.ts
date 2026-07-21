@@ -26,6 +26,7 @@ export const env = {
   openRouterApiKey: process.env.OPENROUTER_API_KEY || "",
   embeddingModel:
     process.env.OPENROUTER_EMBEDDING_MODEL || "nvidia/llama-nemotron-embed-vl-1b-v2:free",
+  embeddingDimension: Number(process.env.OPENROUTER_EMBEDDING_DIMENSION || 1024),
   pendingReindexIntervalMs: Number(process.env.PENDING_REINDEX_INTERVAL_MS || 15000),
   pendingReindexBatchSize: Number(process.env.PENDING_REINDEX_BATCH_SIZE || 20),
 };

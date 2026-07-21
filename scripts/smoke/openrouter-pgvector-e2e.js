@@ -5,6 +5,7 @@ const MODEL = process.env.OPENROUTER_EMBEDDING_MODEL || "nvidia/llama-nemotron-e
 const INPUT_TEXT = process.env.OPENROUTER_TEST_INPUT || "Hello Synapse Workspace";
 const TABLE_NAME = process.env.SMOKE_TABLE_NAME || "embedding_smoke_test";
 const DEFAULT_DATABASE_URL = "postgresql://postgres@127.0.0.1:55432/synapse_test";
+const EMBEDDING_DIMENSION = Number(process.env.OPENROUTER_EMBEDDING_DIMENSION || 1024);
 
 function toPgvectorLiteral(vector) {
   return `[${vector.join(",")}]`;
@@ -26,6 +27,7 @@ async function fetchEmbedding() {
     body: JSON.stringify({
       model: MODEL,
       input: INPUT_TEXT,
+      dimensions: EMBEDDING_DIMENSION,
     }),
   });
 

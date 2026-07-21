@@ -13,7 +13,7 @@ You are an expert AI pair programmer. Always generate code following these stric
 ## Database, Prisma & Migrations Rules
 - **Prisma Schema:** Always define all database entities, relations, enums, and indexes in `/backend/prisma/schema.prisma`.
 - **Database Migrations:** Use Prisma CLI (`npx prisma migrate dev --name <migration_name>`) for all database schema changes and version control. Never write raw, unversioned DDL SQL scripts manually unless configuring raw extensions like `pgvector`.
-- **Vector Extension Support:** Handle the `pgvector` column using Prisma's `Unsupported("vector(2048)")` type (or matching dimensions of the chosen model) to ensure seamless compatibility with `pgvector` operators (`<=>`).
+- **Vector Extension Support:** Handle the `pgvector` column using Prisma's `Unsupported("vector(1024)")` type (or matching dimensions of the chosen model) to ensure seamless compatibility with `pgvector` operators (`<=>`).
 - **Type Safety & Queries:** Always query the database using the generated `@prisma/client`. Use `$queryRaw` or `$executeRaw` specifically when executing pgvector similarity search queries that require low-level vector operators.
 - **Seeding:** Maintain a `prisma/seed.ts` script configured in `package.json` under `"prisma": { "seed": "ts-node prisma/seed.ts" }` to automatically pre-populate the database with demo workspaces and semantically rich sample notes for testing.
 

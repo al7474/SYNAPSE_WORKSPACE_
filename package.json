@@ -10,6 +10,7 @@
     "db:down": "docker compose down",
     "db:logs": "docker compose logs -f db",
     "db:migrate": "pnpm --filter @synapse/backend db:migrate",
+    "dev": "pnpm -r --parallel --filter @synapse/backend --filter @synapse/frontend dev",
     "dev:backend": "pnpm --filter @synapse/backend dev",
     "dev:frontend": "pnpm --filter @synapse/frontend dev",
     "build": "pnpm -r --filter @synapse/* build",
