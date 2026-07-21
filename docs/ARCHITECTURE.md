@@ -17,6 +17,21 @@ Reference migration: `backend/db/migrations/0005_align_embedding_dimension_to_10
 - `frontend/`: Next.js App Router UI.
 - `scripts/smoke/`: infrastructure and resilience smoke tests.
 
+## Frontend module boundaries
+
+- `frontend/app/page.tsx`: composition root. It selects the loading, authentication, or workspace experience and wires hooks to components.
+- `frontend/hooks/use-auth-session.ts`: browser session hydration, guest access, sign-in, registration, and logout state.
+- `frontend/hooks/use-boards.ts`: board loading, selection, permissions, sharing, deletion, and collaborator actions.
+- `frontend/hooks/use-notes.ts`: note loading, selection, autosave, semantic search, realtime updates, creation, and deletion.
+- `frontend/hooks/use-toasts.ts`: transient notification state and cleanup.
+- `frontend/lib/graphql-client.ts`: authenticated GraphQL requests and subscription URL construction.
+- `frontend/lib/session.ts`: session identifiers and local storage persistence.
+- `frontend/components/auth/`: authentication and session-loading views.
+- `frontend/components/workspace/`: workspace shell, navigation, note grid, editor, dialogs, and notifications.
+- `frontend/types/workspace.ts`: shared domain contracts for boards, notes, sessions, and toasts.
+
+Keep GraphQL and browser persistence inside hooks or `lib/` modules. Components should receive data and callbacks through typed props, and the page should remain a composition layer rather than a feature implementation.
+
 ## Local infrastructure commands
 
 - `pnpm db:up`: start PostgreSQL + pgvector via `compose.yaml`.
