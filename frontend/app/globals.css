@@ -2,49 +2,29 @@
 @import "@blocknote/react/style.css";
 
 :root {
-	--background: 215 35% 97%;
-	--foreground: 220 30% 12%;
-	--card: 0 0% 100%;
-	--card-foreground: 220 30% 12%;
-	--primary: 214 72% 43%;
-	--primary-foreground: 0 0% 100%;
-	--secondary: 212 31% 90%;
-	--secondary-foreground: 220 30% 18%;
-	--muted: 212 24% 92%;
-	--muted-foreground: 219 12% 40%;
-	--accent: 207 88% 95%;
-	--accent-foreground: 220 30% 18%;
-	--destructive: 0 68% 45%;
+	--background: 0 0% 4%;
+	--foreground: 0 0% 98%;
+	--card: 0 0% 9%;
+	--card-foreground: 0 0% 98%;
+	--primary: 0 0% 98%;
+	--primary-foreground: 0 0% 4%;
+	--secondary: 0 0% 15%;
+	--secondary-foreground: 0 0% 98%;
+	--muted: 0 0% 15%;
+	--muted-foreground: 0 0% 63%;
+	--accent: 0 0% 15%;
+	--accent-foreground: 0 0% 98%;
+	--destructive: 0 85% 57%;
 	--destructive-foreground: 0 0% 100%;
-	--border: 214 25% 84%;
-	--input: 214 25% 84%;
-	--ring: 214 72% 43%;
-	--radius: 0.65rem;
-}
-
-@media (prefers-color-scheme: dark) {
-	:root {
-		--background: 219 30% 10%;
-		--foreground: 213 31% 94%;
-		--card: 220 28% 14%;
-		--card-foreground: 213 31% 94%;
-		--primary: 202 97% 54%;
-		--primary-foreground: 220 30% 12%;
-		--secondary: 220 18% 22%;
-		--secondary-foreground: 213 31% 94%;
-		--muted: 220 17% 19%;
-		--muted-foreground: 216 14% 70%;
-		--accent: 215 27% 20%;
-		--accent-foreground: 213 31% 94%;
-		--destructive: 0 77% 57%;
-		--destructive-foreground: 0 0% 100%;
-		--border: 218 17% 28%;
-		--input: 218 17% 28%;
-		--ring: 202 97% 54%;
-	}
+	--border: 0 0% 15%;
+	--input: 0 0% 15%;
+	--ring: 0 0% 63%;
+	--radius: 0rem;
 }
 
 body {
-	background-color: hsl(var(--background));
-	color: hsl(var(--foreground));
+	min-height: 100vh;
+	background-color: #0a0a0a;
+	color: #fafafa;
+	color-scheme: dark;
 }

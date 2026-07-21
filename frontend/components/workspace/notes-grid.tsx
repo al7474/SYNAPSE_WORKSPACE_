@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, Plus, Sparkles } from "lucide-react";
+import { Plus } from "lucide-react";
 import type { Note } from "@/types/workspace";
 
 type NotesGridProps = {
@@ -25,63 +25,71 @@ export function NotesGrid({
   onCreateNote,
 }: NotesGridProps) {
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-      {isLoading && <p className="text-[#9aa7bf]">Loading notes...</p>}
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {!isLoading && canEditBoard && (
+        <button
+          type="button"
+          className="grid aspect-square min-h-45 place-items-center border border-dashed border-[rgba(255,255,255,0.1)] bg-transparent text-[#a1a1a1] hover:border-[#737373]"
+          onClick={() => void onCreateNote()}
+          disabled={isCreating}
+        >
+          <div className="text-center">
+            <Plus size={24} className="mx-auto mb-2" aria-hidden="true" />
+            <p className="text-[11px] uppercase tracking-[0.55px]">{isCreating ? "Creating..." : "Create New Note"}</p>
+          </div>
+        </button>
+      )}
+
+      {isLoading && <p className="text-xs uppercase tracking-[0.55px] text-[#a1a1a1]">Loading notes...</p>}
 
       {!isLoading && notes.map((note) => {
         const preview = (note.content || "No content yet").replace(/\s+/g, " ").trim().slice(0, 160);
+        const isIndexed = !note.embeddingPending;
 
         return (
           <article
             key={note.id}
             className={
               note.id === selectedId
-                ? "flex h-[220px] cursor-pointer flex-col border border-[#444748] bg-[#0e0e0e] p-3 shadow-[inset_0_0_0_1px_#ffffff10] sm:h-[249px] sm:p-4"
-                : "flex h-[220px] cursor-pointer flex-col border border-[#2f3131] bg-[#0e0e0e] p-3 sm:h-[249px] sm:p-4"
+                ? "flex aspect-square min-h-45 min-w-0 cursor-pointer flex-col overflow-hidden border border-[#737373] bg-[rgba(23,23,23,0.4)] p-4.25 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)]"
+                : "flex aspect-square min-h-45 min-w-0 cursor-pointer flex-col overflow-hidden border border-[rgba(255,255,255,0.1)] bg-[rgba(23,23,23,0.4)] p-4.25 hover:border-[#737373]"
             }
             onClick={() => onSelectNote(note.id)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onSelectNote(note.id);
+              }
+            }}
+            role="button"
+            tabIndex={0}
           >
-            <div className="flex items-center justify-between">
-              <span className="bg-[#353535] px-2 py-1 text-sm text-[#c4c7c8]">
-                {note.embeddingPending ? "draft" : "active"}
-              </span>
-              {note.embeddingPending ? (
-                <Sparkles size={16} className="text-[#ffd27c]" />
-              ) : (
-                <FileText size={16} className="text-[#8e9192]" />
-              )}
+            <div className="flex min-w-0 items-start justify-between gap-3">
+              <h3 className="min-w-0 truncate text-xs uppercase tracking-[0.6px] text-[#fafafa]">
+                {note.title || "Untitled"}
+              </h3>
+              <span
+                className={isIndexed ? "mt-0.5 h-3 w-3 shrink-0 bg-[#43c251]" : "mt-0.5 h-3 w-3 shrink-0 bg-[#f52f39]"}
+                aria-label={isIndexed ? "Indexed note" : "Note indexing pending"}
+              />
             </div>
-            <h3 className="mb-2 mt-3 line-clamp-2 break-words text-sm text-white sm:mt-4 sm:text-base">
-              {note.title || "Untitled"}
-            </h3>
-            <p className="line-clamp-3 text-sm leading-5 text-[#c4c7c8] sm:text-base sm:leading-6">
+
+            <p className="mt-3 line-clamp-4 text-xs leading-[19.5px] text-[#a1a1a1]">
               {preview}
               {(note.content || "").length > 160 ? "..." : ""}
             </p>
-            <div className="mt-auto flex items-center justify-between border-t border-[#444748] pt-3 text-sm text-[#8e9192]">
-              <span>{note.embeddingPending ? "Index pending" : "Indexed"}</span>
+            <div className="mt-auto flex items-center justify-between border-t border-[rgba(255,255,255,0.1)] pt-3.25 text-[10px] uppercase tracking-[0.5px] text-[#a1a1a1]">
+              <span>{note.embeddingPending ? "Index pending" : "Updated recently"}</span>
               <span>
                 {semanticResults && note.semanticScore !== null && note.semanticScore !== undefined
                   ? `${(note.semanticScore * 100).toFixed(1)}%`
-                  : "Live"}
+                  : ""}
               </span>
             </div>
           </article>
         );
       })}
 
-      {!isLoading && canEditBoard && (
-        <button
-          type="button"
-          className="grid h-[220px] place-items-center border border-[#2f3131] bg-transparent text-[#8e9192] hover:border-[#444748] sm:h-[249px]"
-          onClick={() => void onCreateNote()}
-        >
-          <div className="text-center">
-            <Plus size={18} className="mx-auto mb-2" />
-            <p className="text-base tracking-[0.02em]">{isCreating ? "Creating..." : "Create New Note"}</p>
-          </div>
-        </button>
-      )}
     </div>
   );
 }

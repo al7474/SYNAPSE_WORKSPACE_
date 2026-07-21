@@ -10,11 +10,11 @@ type WorkspaceHeaderProps = {
 
 export function WorkspaceHeader({ isSidebarOpen, onToggleSidebar, onLogout }: WorkspaceHeaderProps) {
   return (
-    <header className="z-50 flex h-[51px] shrink-0 items-center justify-between border-b border-[#444748] bg-[#0e0e0e] px-3 sm:px-6">
-      <div className="flex min-w-0 items-center gap-2 sm:gap-4">
+    <header className="z-50 flex h-[61px] shrink-0 items-center justify-between border-b border-[rgba(255,255,255,0.1)] bg-[#0a0a0a] px-4">
+      <div className="flex min-w-0 items-center gap-2">
         <button
           type="button"
-          className="grid h-8 w-8 shrink-0 place-items-center border border-[#444748] text-[#c4c7c8] lg:hidden"
+          className="grid h-9 w-9 shrink-0 place-items-center border border-[rgba(255,255,255,0.1)] text-[#a1a1a1] lg:hidden"
           onClick={onToggleSidebar}
           aria-expanded={isSidebarOpen}
           aria-controls="workspace-sidebar"
@@ -22,20 +22,19 @@ export function WorkspaceHeader({ isSidebarOpen, onToggleSidebar, onLogout }: Wo
         >
           {isSidebarOpen ? <X size={17} /> : <Menu size={17} />}
         </button>
-        <div className="grid h-8 w-8 place-items-center border border-[#353535] bg-[#1f2020] text-[10px] tracking-widest text-[#c4c7c8]">
-          SY
+        <div className="grid h-9 w-9 place-items-center border border-[rgba(255,255,255,0.1)] bg-[#262626] text-[11px] tracking-[0.55px] text-[#fafafa]">
+          88
         </div>
-        <strong className="truncate text-sm font-medium sm:text-base">Synapse Workspace</strong>
       </div>
       <button
         type="button"
-        className="flex h-8 shrink-0 items-center gap-2 border border-[#444748] px-2 text-sm text-[#c4c7c8] hover:text-white sm:px-3"
+        className="flex h-9 shrink-0 items-center gap-2 border border-[rgba(255,255,255,0.1)] px-[13px] py-[9px] text-[11px] uppercase tracking-[0.55px] text-[#fafafa] hover:border-[#737373]"
         onClick={onLogout}
         aria-label="Log out"
         title="Log out"
       >
-        <LogOut size={16} />
-        <span className="hidden sm:inline">Log Out</span>
+        <LogOut size={14} aria-hidden="true" />
+        <span>Log Out</span>
       </button>
     </header>
   );
