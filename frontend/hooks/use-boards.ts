@@ -28,6 +28,7 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
   const [deletingBoardId, setDeletingBoardId] = useState<string | null>(null);
   const [collaborators, setCollaborators] = useState<BoardCollaborator[]>([]);
   const [isCollaboratorsLoading, setIsCollaboratorsLoading] = useState(false);
+  const [collaboratorActionEmail, setCollaboratorActionEmail] = useState<string | null>(null);
 
   const activeBoard = useMemo(
     () => boards.find((board) => board.id === activeBoardId) || null,
@@ -284,24 +285,17 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
     [activeBoardId, boards, currentUserEmail, loadBoards, onStatusChange, pushToast, sessionId]
   );
 
-  const handleShareBoard = useCallback(async () => {
-    if (!activeBoardId || !activeBoard) {
+  const handleShareBoard = useCallback(async (boardToShare?: Board, permission: BoardPermission = "view") => {
+    const targetBoard = boardToShare ?? activeBoard;
+
+    if (!targetBoard) {
       return;
     }
 
-    if (activeBoard.ownerId !== sessionId) {
+    if (targetBoard.ownerId !== sessionId) {
       pushToast("info", "Only board owner can regenerate share links");
       return;
     }
-
-    const permissionInput = window.prompt("Share permission: view or edit", "view")?.trim().toLowerCase();
-
-    if (permissionInput !== "view" && permissionInput !== "edit") {
-      pushToast("error", "Use permission view or edit");
-      return;
-    }
-
-    const permission = permissionInput as BoardPermission;
 
     try {
       const data = await graphQLRequest<{ createShareLink: string }>(
@@ -310,7 +304,7 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
           createShareLink(boardId: $boardId, permission: $permission)
         }
         `,
-        { boardId: activeBoardId, permission },
+        { boardId: targetBoard.id, permission },
         sessionId,
         currentUserEmail
       );
@@ -320,7 +314,7 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
 
       setBoards((previousBoards) =>
         previousBoards.map((board) =>
-          board.id === activeBoardId
+          board.id === targetBoard.id
             ? { ...board, shareToken: data.createShareLink, sharePermission: permission }
             : board
         )
@@ -332,16 +326,18 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
       onStatusChange(error instanceof Error ? error.message : "Share link failed");
       pushToast("error", "Unable to create share link");
     }
-  }, [activeBoard, activeBoardId, currentUserEmail, onStatusChange, pushToast, sessionId]);
+  }, [activeBoard, currentUserEmail, onStatusChange, pushToast, sessionId]);
 
-  const handleCopyExistingShareLink = useCallback(async () => {
-    if (!activeBoard?.shareToken) {
+  const handleCopyExistingShareLink = useCallback(async (boardToCopy?: Board) => {
+    const targetBoard = boardToCopy ?? activeBoard;
+
+    if (!targetBoard?.shareToken) {
       pushToast("info", "This board has no share link yet");
       return;
     }
 
     try {
-      await navigator.clipboard.writeText(buildShareLink(activeBoard.shareToken));
+      await navigator.clipboard.writeText(buildShareLink(targetBoard.shareToken));
       onStatusChange("Share link copied again");
       pushToast("success", "Share link copied");
     } catch {
@@ -396,11 +392,61 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
     }
   }, [activeBoard, currentUserEmail, loadCollaborators, onStatusChange, pushToast, sessionId]);
 
+  const handleUpdateCollaboratorPermission = useCallback(
+    async (email: string, permission: BoardPermission) => {
+      if (!activeBoard || activeBoard.ownerId !== sessionId) {
+        pushToast("info", "Only board owner can update collaborator access");
+        return;
+      }
+
+      setCollaboratorActionEmail(email);
+
+      try {
+        const data = await graphQLRequest<{ setBoardCollaborator: BoardCollaborator }>(
+          `
+          mutation SetBoardCollaborator($boardId: ID!, $email: String!, $permission: BoardPermission!) {
+            setBoardCollaborator(boardId: $boardId, email: $email, permission: $permission) {
+              boardId
+              email
+              permission
+            }
+          }
+          `,
+          { boardId: activeBoard.id, email, permission },
+          sessionId,
+          currentUserEmail
+        );
+
+        setCollaborators((previousCollaborators) =>
+          previousCollaborators.map((collaborator) =>
+            collaborator.email === email ? data.setBoardCollaborator : collaborator
+          )
+        );
+        pushToast("success", `Access updated for ${email}`);
+        onStatusChange(`Collaborator ${email} -> ${permission}`);
+      } catch (error) {
+        onStatusChange(error instanceof Error ? error.message : "Unable to update collaborator access");
+        pushToast("error", "Unable to update collaborator access");
+      } finally {
+        setCollaboratorActionEmail(null);
+      }
+    },
+    [activeBoard, currentUserEmail, onStatusChange, pushToast, sessionId]
+  );
+
   const handleRemoveCollaborator = useCallback(
     async (email: string) => {
       if (!activeBoard || activeBoard.ownerId !== sessionId) {
         return;
       }
+
+      const shouldRemove = window.confirm(`Remove ${email} from this board?`);
+
+      if (!shouldRemove) {
+        return;
+      }
+
+      setCollaboratorActionEmail(email);
 
       try {
         const data = await graphQLRequest<{ removeBoardCollaborator: boolean }>(
@@ -425,6 +471,8 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
       } catch (error) {
         onStatusChange(error instanceof Error ? error.message : "Unable to remove collaborator");
         pushToast("error", "Unable to remove collaborator");
+      } finally {
+        setCollaboratorActionEmail(null);
       }
     },
     [activeBoard, currentUserEmail, onStatusChange, pushToast, sessionId]
@@ -436,6 +484,7 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
     setActiveShareToken(null);
     setActivePermission("edit");
     setCollaborators([]);
+    setCollaboratorActionEmail(null);
   }, []);
 
   return {
@@ -450,6 +499,7 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
     deletingBoardId,
     collaborators,
     isCollaboratorsLoading,
+    collaboratorActionEmail,
     loadBoards,
     loadCollaborators,
     selectBoard,
@@ -458,6 +508,7 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
     handleShareBoard,
     handleCopyExistingShareLink,
     handleGrantAccessByEmail,
+    handleUpdateCollaboratorPermission,
     handleRemoveCollaborator,
     resetBoards,
   };

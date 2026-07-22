@@ -1,13 +1,19 @@
 "use client";
 
-import { RefreshCw, Share2 } from "lucide-react";
+import { RefreshCw } from "lucide-react";
+import { BoardAccessPanel } from "@/components/workspace/board-access-panel";
 import { NoteEditorPanel } from "@/components/workspace/note-editor-panel";
 import { NotesGrid } from "@/components/workspace/notes-grid";
-import type { Board, Note } from "@/types/workspace";
+import type { Board, BoardCollaborator, BoardPermission, Note } from "@/types/workspace";
 
 type WorkspaceContentProps = {
   searchText: string;
   activeBoard: Board | null;
+  currentUserEmail: string | null;
+  showBoardAccess: boolean;
+  collaborators: BoardCollaborator[];
+  isCollaboratorsLoading: boolean;
+  collaboratorActionEmail: string | null;
   visibleNotes: Note[];
   semanticResults: Note[] | null;
   isLoading: boolean;
@@ -22,7 +28,9 @@ type WorkspaceContentProps = {
   isDeleting: boolean;
   onSearchTextChange: (value: string) => void;
   onRefreshBoards: () => void | Promise<void>;
-  onShareBoard: () => void | Promise<void>;
+  onCloseBoardAccess: () => void;
+  onUpdateCollaboratorPermission: (email: string, permission: BoardPermission) => void | Promise<void>;
+  onRemoveCollaborator: (email: string) => void | Promise<void>;
   onSelectNote: (noteId: string) => void;
   onCreateNote: () => void | Promise<void>;
   onDraftTitleChange: (value: string) => void;
@@ -33,6 +41,11 @@ type WorkspaceContentProps = {
 export function WorkspaceContent({
   searchText,
   activeBoard,
+  currentUserEmail,
+  showBoardAccess,
+  collaborators,
+  isCollaboratorsLoading,
+  collaboratorActionEmail,
   visibleNotes,
   semanticResults,
   isLoading,
@@ -47,7 +60,9 @@ export function WorkspaceContent({
   isDeleting,
   onSearchTextChange,
   onRefreshBoards,
-  onShareBoard,
+  onCloseBoardAccess,
+  onUpdateCollaboratorPermission,
+  onRemoveCollaborator,
   onSelectNote,
   onCreateNote,
   onDraftTitleChange,
@@ -71,43 +86,50 @@ export function WorkspaceContent({
             >
               {isBoardsLoading ? "..." : <RefreshCw size={14} aria-hidden="true" />}
             </button>
-            <button
-              type="button"
-              className="grid h-7 w-7 place-items-center text-[#a1a1a1] hover:text-[#fafafa] disabled:opacity-30"
-              onClick={() => void onShareBoard()}
-              disabled={!activeBoard}
-              title="Share board"
-              aria-label="Share board"
-            >
-              <Share2 size={14} aria-hidden="true" />
-            </button>
           </div>
         </div>
 
-        <NotesGrid
-          notes={visibleNotes}
-          semanticResults={semanticResults}
-          isLoading={isLoading}
-          selectedId={selectedId}
-          canEditBoard={canEditBoard}
-          isCreating={isCreating}
-          onSelectNote={onSelectNote}
-          onCreateNote={onCreateNote}
-        />
-
-        {selectedId && (
-          <NoteEditorPanel
-            selectedId={selectedId}
-            selectedNote={selectedNote}
-            draftTitle={draftTitle}
-            draftContent={draftContent}
-            lastSavedAt={lastSavedAt}
-            canEditBoard={canEditBoard}
-            isDeleting={isDeleting}
-            onDraftTitleChange={onDraftTitleChange}
-            onDraftContentChange={onDraftContentChange}
-            onRequestDelete={onRequestDelete}
+        {showBoardAccess && activeBoard && (
+          <BoardAccessPanel
+            board={activeBoard}
+            currentUserEmail={currentUserEmail}
+            collaborators={collaborators}
+            isLoading={isCollaboratorsLoading}
+            collaboratorActionEmail={collaboratorActionEmail}
+            onClose={onCloseBoardAccess}
+            onUpdatePermission={onUpdateCollaboratorPermission}
+            onRemoveCollaborator={onRemoveCollaborator}
           />
+        )}
+
+        {!showBoardAccess && (
+          <>
+            <NotesGrid
+              notes={visibleNotes}
+              semanticResults={semanticResults}
+              isLoading={isLoading}
+              selectedId={selectedId}
+              canEditBoard={canEditBoard}
+              isCreating={isCreating}
+              onSelectNote={onSelectNote}
+              onCreateNote={onCreateNote}
+            />
+
+            {selectedId && (
+              <NoteEditorPanel
+                selectedId={selectedId}
+                selectedNote={selectedNote}
+                draftTitle={draftTitle}
+                draftContent={draftContent}
+                lastSavedAt={lastSavedAt}
+                canEditBoard={canEditBoard}
+                isDeleting={isDeleting}
+                onDraftTitleChange={onDraftTitleChange}
+                onDraftContentChange={onDraftContentChange}
+                onRequestDelete={onRequestDelete}
+              />
+            )}
+          </>
         )}
       </div>
     </section>

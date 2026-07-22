@@ -1,7 +1,9 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
-import type { Board, SessionMode } from "@/types/workspace";
+import { useState } from "react";
+import { Copy, Link2, MoreHorizontal, Plus, Trash2, Users } from "lucide-react";
+import { SharePermissionDialog } from "@/components/workspace/share-permission-dialog";
+import type { Board, BoardPermission, SessionMode } from "@/types/workspace";
 
 type WorkspaceSidebarProps = {
   boards: Board[];
@@ -16,6 +18,9 @@ type WorkspaceSidebarProps = {
   onResetSearch: () => void;
   onSelectBoard: (board: Board) => void;
   onDeleteBoard: (board: Board) => void | Promise<void>;
+  onShareBoard: (board: Board, permission: BoardPermission) => void | Promise<void>;
+  onCopyShareLink: (board: Board) => void | Promise<void>;
+  onShowBoardAccess: (board: Board) => void;
   onCreateBoard: () => void | Promise<void>;
 };
 
@@ -32,8 +37,37 @@ export function WorkspaceSidebar({
   onResetSearch,
   onSelectBoard,
   onDeleteBoard,
+  onShareBoard,
+  onCopyShareLink,
+  onShowBoardAccess,
   onCreateBoard,
 }: WorkspaceSidebarProps) {
+  const [openBoardMenuId, setOpenBoardMenuId] = useState<string | null>(null);
+  const [shareTargetBoard, setShareTargetBoard] = useState<Board | null>(null);
+  const [sharePermission, setSharePermission] = useState<BoardPermission>("view");
+  const [isGeneratingShareLink, setIsGeneratingShareLink] = useState(false);
+
+  const openShareDialog = (board: Board) => {
+    setOpenBoardMenuId(null);
+    setShareTargetBoard(board);
+    setSharePermission(board.shareToken ? board.sharePermission : "view");
+  };
+
+  const confirmShare = async () => {
+    if (!shareTargetBoard) {
+      return;
+    }
+
+    setIsGeneratingShareLink(true);
+
+    try {
+      await onShareBoard(shareTargetBoard, sharePermission);
+      setShareTargetBoard(null);
+    } finally {
+      setIsGeneratingShareLink(false);
+    }
+  };
+
   return (
     <>
       {isSidebarOpen && (
@@ -66,7 +100,7 @@ export function WorkspaceSidebar({
           </button>
 
           <div className="mt-2 space-y-2">
-            {boards.map((board, index) => (
+            {boards.map((board) => (
               <div
                 key={board.id}
                 className={
@@ -86,16 +120,86 @@ export function WorkspaceSidebar({
                   <span className="truncate">{board.name}</span>
                 </button>
                 {board.ownerId === sessionId && (
-                  <button
-                    type="button"
-                    className="mr-1 grid h-6 w-6 shrink-0 place-items-center text-[#a1a1a1] hover:text-[#f52f39]"
-                    onClick={() => void onDeleteBoard(board)}
-                    disabled={deletingBoardId === board.id}
-                    aria-label={`Delete board ${board.name}`}
-                    title={`Delete board ${board.name}`}
-                  >
-                    {deletingBoardId === board.id ? "..." : <Trash2 size={14} aria-hidden="true" />}
-                  </button>
+                  <div className="relative mr-1 flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      className="grid h-6 w-6 place-items-center text-[#a1a1a1] hover:text-[#fafafa]"
+                      onClick={() => setOpenBoardMenuId((currentId) => (currentId === board.id ? null : board.id))}
+                      aria-label={`Board options for ${board.name}`}
+                      aria-expanded={openBoardMenuId === board.id}
+                      aria-haspopup="menu"
+                      title={`Board options for ${board.name}`}
+                    >
+                      <MoreHorizontal size={14} aria-hidden="true" />
+                    </button>
+
+                    {openBoardMenuId === board.id && (
+                      <div
+                        className="absolute right-0 top-8 z-50 w-[240px] max-w-[calc(100vw-48px)] border border-[rgba(255,255,255,0.15)] bg-[#171717] p-2 shadow-2xl"
+                        role="menu"
+                        aria-label={`${board.name} options`}
+                      >
+                        <div className="flex items-center gap-2 border-b border-[rgba(255,255,255,0.1)] px-2 pb-2 text-[10px] uppercase tracking-[0.45px] text-[#fafafa]">
+                          <span
+                            className={`h-2 w-2 shrink-0 rounded-full ${board.shareToken ? "bg-[#33d17a]" : "bg-[#f52f39]"}`}
+                            aria-hidden="true"
+                          />
+                          <span className="truncate">{board.shareToken ? "Link sharing active" : "No active link"}</span>
+                        </div>
+
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 px-2 py-2 text-left text-[10px] uppercase tracking-[0.45px] text-[#a1a1a1] hover:bg-[#262626] hover:text-[#fafafa]"
+                          onClick={() => {
+                            setOpenBoardMenuId(null);
+                            onShowBoardAccess(board);
+                            onClose();
+                          }}
+                          role="menuitem"
+                        >
+                          <Users size={14} aria-hidden="true" />
+                          <span>People and access</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 px-2 py-2 text-left text-[10px] uppercase tracking-[0.45px] text-[#a1a1a1] hover:bg-[#262626] hover:text-[#fafafa]"
+                          onClick={() => openShareDialog(board)}
+                          role="menuitem"
+                        >
+                          <Link2 size={14} aria-hidden="true" />
+                          <span>{board.shareToken ? "Generate new link" : "Generate link"}</span>
+                        </button>
+                        {board.shareToken && (
+                          <div className="mt-1 border-t border-[rgba(255,255,255,0.1)] pt-2">
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1.5 border border-[rgba(255,255,255,0.1)] px-2 py-1.5 text-[10px] uppercase tracking-[0.45px] text-[#a1a1a1] hover:border-[#737373] hover:text-[#fafafa]"
+                              onClick={() => {
+                                setOpenBoardMenuId(null);
+                                void onCopyShareLink(board);
+                              }}
+                              role="menuitem"
+                              aria-label="Copy share link"
+                            >
+                              <Copy size={13} aria-hidden="true" />
+                              <span>Copy link</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      className="grid h-6 w-6 shrink-0 place-items-center text-[#a1a1a1] hover:text-[#f52f39]"
+                      onClick={() => void onDeleteBoard(board)}
+                      disabled={deletingBoardId === board.id}
+                      aria-label={`Delete board ${board.name}`}
+                      title={`Delete board ${board.name}`}
+                    >
+                      {deletingBoardId === board.id ? "..." : <Trash2 size={14} aria-hidden="true" />}
+                    </button>
+                  </div>
                 )}
               </div>
             ))}
@@ -113,6 +217,17 @@ export function WorkspaceSidebar({
           </div>
         </div>
       </aside>
+
+      {shareTargetBoard && (
+        <SharePermissionDialog
+          board={shareTargetBoard}
+          permission={sharePermission}
+          isSubmitting={isGeneratingShareLink}
+          onPermissionChange={setSharePermission}
+          onCancel={() => setShareTargetBoard(null)}
+          onConfirm={confirmShare}
+        />
+      )}
     </>
   );
 }

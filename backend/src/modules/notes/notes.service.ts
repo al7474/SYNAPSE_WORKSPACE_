@@ -145,10 +145,12 @@ export class NotesService {
     }
 
     if (requireEdit) {
-      throw new Error("This shared board is read-only");
+      if (board.sharePermission !== "edit") {
+        throw new Error("This shared board is read-only");
+      }
     }
 
-    return { board, permission: "view" };
+    return { board, permission: board.sharePermission };
   }
 
   async listBoards(ownerId: string, userEmail?: string): Promise<Board[]> {
@@ -396,7 +398,7 @@ export class NotesService {
 
     return {
       board,
-      permission: "view",
+      permission: board.sharePermission,
     };
   }
 

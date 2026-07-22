@@ -12,6 +12,7 @@ import type { AuthMode, Board } from "@/types/workspace";
 
 export default function HomePage() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [accessBoardId, setAccessBoardId] = useState<string | null>(null);
   const [, setStatus] = useState("Initializing secure workspace environment...");
   const { toasts, pushToast } = useToasts();
 
@@ -39,9 +40,21 @@ export default function HomePage() {
 
   const handleLogout = () => {
     setIsSidebarOpen(false);
+    setAccessBoardId(null);
     boards.resetBoards();
     notes.resetNotes();
     auth.clearSession();
+  };
+
+  const handleSelectBoard = (board: Board) => {
+    setAccessBoardId(null);
+    boards.selectBoard(board);
+  };
+
+  const handleShowBoardAccess = (board: Board) => {
+    setAccessBoardId(board.id);
+    boards.selectBoard(board);
+    setIsSidebarOpen(false);
   };
 
   const handleDeleteBoard = async (board: Board) => {
@@ -103,13 +116,21 @@ export default function HomePage() {
         deletingBoardId: boards.deletingBoardId,
         onClose: () => setIsSidebarOpen(false),
         onResetSearch: () => notes.setSearchText(""),
-        onSelectBoard: boards.selectBoard,
+        onSelectBoard: handleSelectBoard,
         onDeleteBoard: handleDeleteBoard,
+        onShareBoard: boards.handleShareBoard,
+        onCopyShareLink: boards.handleCopyExistingShareLink,
+        onShowBoardAccess: handleShowBoardAccess,
         onCreateBoard: boards.handleCreateBoard,
       }}
       content={{
         searchText: notes.searchText,
         activeBoard: boards.activeBoard,
+        currentUserEmail: auth.currentUserEmail,
+        showBoardAccess: accessBoardId === boards.activeBoardId,
+        collaborators: boards.collaborators,
+        isCollaboratorsLoading: boards.isCollaboratorsLoading,
+        collaboratorActionEmail: boards.collaboratorActionEmail,
         visibleNotes: notes.visibleNotes,
         semanticResults: notes.semanticResults,
         isLoading: notes.isLoading,
@@ -124,7 +145,9 @@ export default function HomePage() {
         isDeleting: notes.isDeleting,
         onSearchTextChange: notes.setSearchText,
         onRefreshBoards: boards.loadBoards,
-        onShareBoard: boards.handleShareBoard,
+        onCloseBoardAccess: () => setAccessBoardId(null),
+        onUpdateCollaboratorPermission: boards.handleUpdateCollaboratorPermission,
+        onRemoveCollaborator: boards.handleRemoveCollaborator,
         onSelectNote: notes.setSelectedId,
         onCreateNote: notes.handleCreateNote,
         onDraftTitleChange: notes.setDraftTitle,
