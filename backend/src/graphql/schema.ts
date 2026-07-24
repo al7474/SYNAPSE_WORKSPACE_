@@ -8,6 +8,7 @@ interface GraphQLContext {
   sessionId: string | null;
   userEmail: string | null;
   ownerMetadata: OwnerMetadata;
+  revalidateSession: () => Promise<boolean>;
 }
 
 interface NoteUpdatedPubSub {
@@ -16,17 +17,29 @@ interface NoteUpdatedPubSub {
 }
 
 export function buildSchema(pubSub: NoteUpdatedPubSub) {
-  async function* boardScopedIterator(source: AsyncIterable<Note>, boardId: string): AsyncIterable<Note> {
+  async function* authorizedBoardIterator(
+    source: AsyncIterable<Note>,
+    boardId: string,
+    authorize: () => Promise<void>
+  ): AsyncIterable<Note> {
     for await (const event of source) {
-      if (event.boardId === boardId) {
-        yield event;
+      if (event.boardId !== boardId) {
+        continue;
       }
+
+      try {
+        await authorize();
+      } catch {
+        return;
+      }
+
+      yield event;
     }
   }
 
   function requireSessionId(ctx: GraphQLContext): string {
     if (!ctx.sessionId) {
-      throw new Error("Missing session id. Send x-session-id header.");
+      throw new Error("Missing authenticated session cookie.");
     }
 
     return ctx.sessionId;
@@ -54,7 +67,7 @@ export function buildSchema(pubSub: NoteUpdatedPubSub) {
         id: ID!
         ownerId: String!
         name: String!
-        shareToken: String
+        shareLinkActive: Boolean!
         sharePermission: BoardPermission!
         createdAt: String!
         updatedAt: String!
@@ -88,6 +101,7 @@ export function buildSchema(pubSub: NoteUpdatedPubSub) {
         setBoardCollaborator(boardId: ID!, email: String!, permission: BoardPermission!): BoardCollaborator!
         removeBoardCollaborator(boardId: ID!, email: String!): Boolean!
         createShareLink(boardId: ID!, permission: BoardPermission!): String!
+        revokeShareLink(boardId: ID!): Boolean!
         createNote(boardId: ID!, shareToken: String, title: String!, content: String!): Note!
         updateNote(boardId: ID!, shareToken: String, id: ID!, title: String, content: String): Note!
         deleteNote(boardId: ID!, shareToken: String, id: ID!): Boolean!
@@ -187,6 +201,10 @@ export function buildSchema(pubSub: NoteUpdatedPubSub) {
             ctx.ownerMetadata
           );
         },
+        revokeShareLink: async (_parent, args, ctx) => {
+          const sessionId = requireSessionId(ctx);
+          return ctx.notesService.revokeShareLink(sessionId, args.boardId, ctx.ownerMetadata);
+        },
         createNote: async (_parent, args, ctx) => {
           const sessionId = requireSessionId(ctx);
           const note = await ctx.notesService.createNote({
@@ -244,14 +262,23 @@ export function buildSchema(pubSub: NoteUpdatedPubSub) {
         noteUpdated: {
           subscribe: async (_parent, args, ctx) => {
             const sessionId = requireSessionId(ctx);
-            await ctx.notesService.listNotes({
-              ownerId: sessionId,
-              userEmail: ctx.userEmail ?? undefined,
-              ownerMetadata: ctx.ownerMetadata,
-              boardId: args.boardId,
-              shareToken: args.shareToken ?? undefined,
-            });
-            return boardScopedIterator(pubSub.subscribe("NOTE_UPDATED"), args.boardId);
+            const authorize = async () => {
+              if (!(await ctx.revalidateSession())) {
+                throw new Error("Missing authenticated session cookie.");
+              }
+
+              await ctx.notesService.assertBoardAccess(
+                sessionId,
+                ctx.userEmail ?? undefined,
+                args.boardId,
+                args.shareToken ?? undefined,
+                false,
+                ctx.ownerMetadata
+              );
+            };
+
+            await authorize();
+            return authorizedBoardIterator(pubSub.subscribe("NOTE_UPDATED"), args.boardId, authorize);
           },
           resolve: (payload: Note) => payload,
         },

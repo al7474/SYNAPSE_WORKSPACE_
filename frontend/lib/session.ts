@@ -1,4 +1,4 @@
-import type { StoredSession } from "@/types/workspace";
+import type { SessionMode, SessionState } from "@/types/workspace";
 
 const GRAPHQL_ENDPOINT =
   process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT || "http://localhost:4000/graphql";
@@ -70,7 +70,7 @@ async function parseResponse<T>(response: Response, fallbackMessage: string): Pr
   return payload as T;
 }
 
-function toStoredAccountSession(payload: AccountSessionResponse): StoredSession {
+function toAccountSessionState(payload: AccountSessionResponse): SessionState {
   return {
     sessionId: payload.sessionId,
     sessionMode: payload.sessionMode,
@@ -78,8 +78,8 @@ function toStoredAccountSession(payload: AccountSessionResponse): StoredSession 
   };
 }
 
-export async function readStoredSession(): Promise<StoredSession | null> {
-  try {
+export async function currentSession(mode?: SessionMode): Promise<SessionState | null> {
+  if (mode !== "guest") {
     const accountResponse = await fetch(getAuthEndpoint("/auth/session"), {
       method: "GET",
       credentials: "include",
@@ -87,7 +87,7 @@ export async function readStoredSession(): Promise<StoredSession | null> {
     });
 
     if (accountResponse.ok) {
-      return toStoredAccountSession(
+      return toAccountSessionState(
         await parseResponse<AccountSessionResponse>(accountResponse, "Unable to restore account session")
       );
     }
@@ -96,35 +96,35 @@ export async function readStoredSession(): Promise<StoredSession | null> {
       throw new Error("Unable to restore account session");
     }
 
-    const guestResponse = await fetch(getGuestSessionEndpoint(), {
-      method: "GET",
-      credentials: "include",
-      headers: { Accept: "application/json" },
-    });
-
-    if (guestResponse.ok) {
-      const payload = await parseResponse<GuestSessionResponse>(guestResponse, "Unable to restore demo session");
-
-      return {
-        sessionId: payload.sessionId,
-        sessionMode: payload.sessionMode,
-        userEmail: payload.userEmail,
-      };
+    if (mode === "user") {
+      return null;
     }
+  }
 
-    if (guestResponse.status !== 401) {
-      throw new Error("Unable to restore demo session");
-    }
-  } catch {
-    clearStoredSession();
+  const guestResponse = await fetch(getGuestSessionEndpoint(), {
+    method: "GET",
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+
+  if (guestResponse.ok) {
+    const payload = await parseResponse<GuestSessionResponse>(guestResponse, "Unable to restore demo session");
+
+    return {
+      sessionId: payload.sessionId,
+      sessionMode: payload.sessionMode,
+      userEmail: payload.userEmail,
+    };
+  }
+
+  if (guestResponse.status === 401) {
     return null;
   }
 
-  clearStoredSession();
-  return null;
+  throw new Error("Unable to restore demo session");
 }
 
-export async function createGuestSession(): Promise<StoredSession> {
+export async function createGuestSession(): Promise<SessionState> {
   const response = await fetch(getGuestSessionEndpoint(), {
     method: "POST",
     credentials: "include",
@@ -137,8 +137,6 @@ export async function createGuestSession(): Promise<StoredSession> {
 
   const payload = (await response.json()) as GuestSessionResponse;
 
-  clearStoredSession();
-
   return {
     sessionId: payload.sessionId,
     sessionMode: payload.sessionMode,
@@ -150,7 +148,7 @@ export async function registerAccount(
   name: string,
   email: string,
   password: string
-): Promise<{ session: StoredSession; verificationEmailSent: boolean }> {
+): Promise<{ session: SessionState; verificationEmailSent: boolean }> {
   const response = await fetch(getAuthEndpoint("/auth/register"), {
     method: "POST",
     credentials: "include",
@@ -163,12 +161,12 @@ export async function registerAccount(
   const payload = await parseResponse<RegisterResponse>(response, "Unable to create account");
 
   return {
-    session: toStoredAccountSession(payload),
+    session: toAccountSessionState(payload),
     verificationEmailSent: payload.verificationEmailSent,
   };
 }
 
-export async function loginAccount(email: string, password: string): Promise<StoredSession> {
+export async function loginAccount(email: string, password: string): Promise<SessionState> {
   const response = await fetch(getAuthEndpoint("/auth/login"), {
     method: "POST",
     credentials: "include",
@@ -180,7 +178,7 @@ export async function loginAccount(email: string, password: string): Promise<Sto
   });
   const payload = await parseResponse<AccountSessionResponse>(response, "Unable to sign in");
 
-  return toStoredAccountSession(payload);
+  return toAccountSessionState(payload);
 }
 
 export async function logoutAccount(): Promise<void> {
@@ -245,10 +243,10 @@ export async function deleteGuestSession(): Promise<void> {
     throw new Error("Unable to delete demo workspace");
   }
 
-  clearStoredSession();
+  clearLegacySessionStorage();
 }
 
-export function clearStoredSession(): void {
+export function clearLegacySessionStorage(): void {
   window.localStorage.removeItem(LEGACY_SESSION_ID_KEY);
   window.localStorage.removeItem(LEGACY_SESSION_MODE_KEY);
   window.localStorage.removeItem(LEGACY_USER_EMAIL_KEY);

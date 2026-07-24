@@ -25,14 +25,12 @@ export default function HomePage() {
 
   const boards = useBoards({
     sessionId: auth.sessionId,
-    currentUserEmail: auth.currentUserEmail,
     onStatusChange: setStatus,
     pushToast,
   });
 
   const notes = useNotes({
     sessionId: auth.sessionId,
-    currentUserEmail: auth.currentUserEmail,
     activeBoardId: boards.activeBoardId,
     activeShareToken: boards.activeShareToken,
     canEditBoard: boards.canEditBoard,
@@ -173,6 +171,7 @@ export default function HomePage() {
         onDeleteBoard: handleDeleteBoard,
         onShareBoard: boards.handleShareBoard,
         onCopyShareLink: boards.handleCopyExistingShareLink,
+        onRevokeShareLink: boards.handleRevokeShareLink,
         onShowBoardAccess: handleShowBoardAccess,
         onCreateBoard: boards.handleCreateBoard,
         onDeleteDemoWorkspace: handleDeleteDemoWorkspace,

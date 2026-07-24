@@ -2,16 +2,16 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import {
-  clearStoredSession,
+  clearLegacySessionStorage,
   createGuestSession,
+  currentSession,
   deleteGuestSession,
   loginAccount,
   logoutAccount,
   registerAccount,
-  readStoredSession,
   requestPasswordReset,
 } from "@/lib/session";
-import type { AuthMode, SessionMode, ToastKind } from "@/types/workspace";
+import type { AuthMode, SessionMode, SessionState, ToastKind } from "@/types/workspace";
 
 type UseAuthSessionOptions = {
   onStatusChange: (status: string) => void;
@@ -31,17 +31,40 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [isHydratingSession, setIsHydratingSession] = useState(true);
 
+  const clearLocalSession = useCallback(() => {
+    clearLegacySessionStorage();
+    setSessionId("");
+    setSessionMode(null);
+    setCurrentUserEmail(null);
+    setAuthMode("login");
+    setAuthName("");
+    setAuthEmail("");
+    setAuthPassword("");
+    setAuthConfirmPassword("");
+    setAuthError("");
+  }, []);
+
+  const activateSession = useCallback((session: SessionState) => {
+    setSessionId(session.sessionId);
+    setSessionMode(session.sessionMode);
+    setCurrentUserEmail(session.userEmail);
+  }, []);
+
   useEffect(() => {
     let isCancelled = false;
 
     const hydrateSession = async () => {
       try {
-        const storedSession = await readStoredSession();
+        const session = await currentSession();
 
-        if (!isCancelled && storedSession) {
-          setSessionId(storedSession.sessionId);
-          setSessionMode(storedSession.sessionMode);
-          setCurrentUserEmail(storedSession.userEmail);
+        if (!isCancelled && session) {
+          activateSession(session);
+        } else if (!isCancelled) {
+          clearLocalSession();
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          onStatusChange(error instanceof Error ? error.message : "Unable to restore session");
         }
       } finally {
         if (!isCancelled) {
@@ -55,42 +78,69 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
     return () => {
       isCancelled = true;
     };
-  }, []);
+  }, [activateSession, clearLocalSession, onStatusChange]);
 
-  const activateSession = useCallback((nextSessionId: string, nextSessionMode: SessionMode, userEmail: string | null = null) => {
-    if (nextSessionMode === "guest") {
-      clearStoredSession();
+  useEffect(() => {
+    if (!sessionId || !sessionMode) {
+      return;
     }
 
-    setSessionId(nextSessionId);
-    setSessionMode(nextSessionMode);
-    setCurrentUserEmail(userEmail);
-  }, []);
+    let isCancelled = false;
+
+    const validateSession = async () => {
+      try {
+        const session = await currentSession(sessionMode);
+
+        if (!isCancelled && !session) {
+          clearLocalSession();
+          onStatusChange("Session expired");
+          pushToast("info", "Your session expired. Please sign in again.");
+        }
+      } catch {
+      }
+    };
+
+    const handleFocus = () => {
+      void validateSession();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void validateSession();
+      }
+    };
+
+    const intervalId = window.setInterval(() => {
+      void validateSession();
+    }, 60_000);
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      isCancelled = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [clearLocalSession, onStatusChange, pushToast, sessionId, sessionMode]);
 
   const clearSession = useCallback(async (): Promise<boolean> => {
-    const demoDeletion = sessionMode === "guest" ? deleteGuestSession() : Promise.resolve();
-    const accountLogout = sessionMode === "user" ? logoutAccount() : Promise.resolve();
-
-    clearStoredSession();
-    setSessionId("");
-    setSessionMode(null);
-    setCurrentUserEmail(null);
-    setAuthMode("login");
-    setAuthName("");
-    setAuthEmail("");
-    setAuthPassword("");
-    setAuthConfirmPassword("");
-    setAuthError("");
+    const activeSessionMode = sessionMode;
+    clearLocalSession();
 
     try {
-      await demoDeletion;
-      await accountLogout;
+      if (activeSessionMode === "guest") {
+        await deleteGuestSession();
+      } else if (activeSessionMode === "user") {
+        await logoutAccount();
+      }
+
       return true;
     } catch (error) {
       pushToast("error", error instanceof Error ? error.message : "Unable to delete demo workspace");
       return false;
     }
-  }, [pushToast, sessionMode]);
+  }, [clearLocalSession, pushToast, sessionMode]);
 
   const handleGuestAccess = useCallback(async () => {
     setAuthError("");
@@ -98,7 +148,7 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
 
     try {
       const guestSession = await createGuestSession();
-      activateSession(guestSession.sessionId, "guest");
+      activateSession(guestSession);
       onStatusChange("Demo session active");
       pushToast("info", "You are in demo mode");
     } catch (error) {
@@ -132,7 +182,7 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
 
       try {
         const session = await loginAccount(email, authPassword);
-        activateSession(session.sessionId, session.sessionMode, session.userEmail);
+        activateSession(session);
         onStatusChange("Signed in");
         pushToast("success", "Welcome back");
       } catch (error) {
@@ -179,7 +229,7 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
 
       try {
         const result = await registerAccount(name, email, authPassword);
-        activateSession(result.session.sessionId, result.session.sessionMode, result.session.userEmail);
+        activateSession(result.session);
         onStatusChange("Account created");
         pushToast(
           result.verificationEmailSent ? "success" : "info",

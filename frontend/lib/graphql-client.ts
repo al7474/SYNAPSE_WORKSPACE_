@@ -12,14 +12,8 @@ type GraphQLResponse<T> = {
 
 export async function graphQLRequest<T>(
   query: string,
-  variables?: Record<string, unknown>,
-  sessionId?: string,
-  _userEmail?: string | null
+  variables?: Record<string, unknown>
 ): Promise<T> {
-  if (!sessionId) {
-    throw new Error("Session not initialized");
-  }
-
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
@@ -47,9 +41,7 @@ export async function graphQLRequest<T>(
 
 export function buildNoteSubscriptionUrl(
   boardId: string,
-  shareToken: string | null,
-  _sessionId?: string,
-  _userEmail?: string | null
+  shareToken: string | null
 ): string {
   const subscriptionQuery = `
     subscription NoteUpdated($boardId: ID!, $shareToken: String) {

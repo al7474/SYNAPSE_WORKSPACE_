@@ -24,36 +24,6 @@ import type { Note } from "./modules/notes/notes.types.js";
 const GUEST_SESSION_PATH = "/auth/guest-session";
 const AUTH_PATH_SET = new Set<string>(Object.values(AUTH_PATHS));
 
-function extractLegacySessionId(request: Request): string | null {
-  const headerValue = request.headers.get("x-session-id")?.trim();
-  const url = new URL(request.url);
-  const queryValue = url.searchParams.get("sessionId")?.trim();
-  const candidate = headerValue || queryValue || null;
-
-  if (!candidate || candidate.startsWith("guest_")) {
-    return null;
-  }
-
-  return candidate;
-}
-
-function extractLegacyUserEmail(request: Request): string | null {
-  const headerValue = request.headers.get("x-user-email")?.trim().toLowerCase();
-
-  if (headerValue) {
-    return headerValue;
-  }
-
-  const url = new URL(request.url);
-  const queryValue = url.searchParams.get("userEmail")?.trim().toLowerCase();
-
-  if (queryValue) {
-    return queryValue;
-  }
-
-  return null;
-}
-
 function setAuthCorsHeaders(request: Request, response: ServerResponse): void {
   const requestOrigin = request.headers.get("origin");
 
@@ -181,6 +151,8 @@ async function bootstrap() {
           ownerMetadata: authSession
             ? { ownerKind: "user", ownerUserId: authSession.user.id }
             : { ownerKind: "legacy" },
+          revalidateSession: async () =>
+            Boolean(await authService.resolveSession(authSessionCookieValue)),
         };
       }
 
@@ -195,8 +167,10 @@ async function bootstrap() {
         return {
           notesService,
           sessionId: guestSession?.ownerId ?? null,
-          userEmail: null,
+          userEmail: null as string | null,
           ownerMetadata,
+          revalidateSession: async () =>
+            Boolean(await guestSessions.resolve(guestSessionCookieValue)),
         };
       }
 
@@ -204,15 +178,16 @@ async function bootstrap() {
 
       return {
         notesService,
-        sessionId: extractLegacySessionId(request),
-        userEmail: extractLegacyUserEmail(request),
+        sessionId: null,
+        userEmail: null as string | null,
         ownerMetadata,
+        revalidateSession: async () => false,
       };
     },
     cors: {
       origin: env.frontendOrigin,
       credentials: true,
-      allowedHeaders: ["Content-Type", "x-session-id", "x-user-email"],
+      allowedHeaders: ["Content-Type"],
     },
     graphiql: !env.isProduction,
   });

@@ -36,17 +36,17 @@ async function requestJson(path, method, body, cookie) {
   };
 }
 
-async function requestGraphQL(query, cookie) {
-  const headers = { "content-type": "application/json" };
+async function requestGraphQL(query, cookie, queryString = "", extraHeaders = {}, variables) {
+  const headers = { "content-type": "application/json", ...extraHeaders };
 
   if (cookie) {
     headers.Cookie = cookie;
   }
 
-  const response = await fetch(`${BASE_URL}/graphql`, {
+  const response = await fetch(`${BASE_URL}/graphql${queryString}`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ query }),
+    body: JSON.stringify({ query, variables }),
     signal: AbortSignal.timeout(10000),
   });
 
@@ -61,6 +61,7 @@ async function main() {
   const password = "correct-horse-123";
   const pool = new Pool({ connectionString: DATABASE_URL });
   let userId = null;
+  let guestCookie = null;
 
   try {
     const preflight = await fetch(`${BASE_URL}/auth/register`, {
@@ -97,12 +98,177 @@ async function main() {
     assert(currentSession.response.status === 200, "Current session lookup failed");
     assert(currentSession.payload.user.email === email, "Current session returned the wrong user");
 
-    const boards = await requestGraphQL("{ listBoards { id ownerId name } }", registerCookie);
+    const forgedIdentity = await requestGraphQL(
+      "{ listBoards { id } }",
+      null,
+      `?sessionId=${encodeURIComponent(userId)}&userEmail=${encodeURIComponent(email)}`,
+      { "x-session-id": String(userId), "x-user-email": email }
+    );
+    assert(
+      forgedIdentity.payload.data?.listBoards == null,
+      "Client-controlled identity values authenticated a GraphQL request"
+    );
+    assert(
+      forgedIdentity.payload.errors?.length > 0,
+      "GraphQL did not require a validated session cookie"
+    );
+
+    const boards = await requestGraphQL(
+      "{ listBoards { id ownerId name shareLinkActive sharePermission } }",
+      registerCookie
+    );
     assert(!boards.payload.errors, `Authenticated GraphQL query failed: ${JSON.stringify(boards.payload)}`);
     assert(boards.payload.data.listBoards.length > 0, "Account did not receive an initial board");
     assert(String(boards.payload.data.listBoards[0].ownerId) === String(userId), "Board ownership is not typed to the user");
 
     const boardId = boards.payload.data.listBoards[0].id;
+    assert(boards.payload.data.listBoards[0].shareLinkActive === false, "New board has an active share link");
+
+    const viewShare = await requestGraphQL(
+      `
+      mutation CreateShareLink($boardId: ID!, $permission: BoardPermission!) {
+        createShareLink(boardId: $boardId, permission: $permission)
+      }
+      `,
+      registerCookie,
+      "",
+      {},
+      { boardId, permission: "view" }
+    );
+    const viewToken = viewShare.payload.data?.createShareLink;
+    assert(!viewShare.payload.errors, `View share-link creation failed: ${JSON.stringify(viewShare.payload)}`);
+    assert(typeof viewToken === "string" && viewToken.length >= 40, "Share token has insufficient entropy");
+
+    const boardColumns = await pool.query(
+      `
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_name = 'boards'
+        AND column_name IN ('share_token', 'share_token_hash')
+      `
+    );
+    const columnNames = new Set(boardColumns.rows.map((row) => row.column_name));
+    assert(!columnNames.has("share_token"), "Plaintext share-token column still exists");
+    assert(columnNames.has("share_token_hash"), "Hashed share-token column is missing");
+
+    const storedShareToken = await pool.query(
+      "SELECT share_token_hash FROM boards WHERE id = $1",
+      [boardId]
+    );
+    const storedShareTokenHash = storedShareToken.rows[0]?.share_token_hash;
+    assert(
+      typeof storedShareTokenHash === "string" &&
+        storedShareTokenHash.length === 64 &&
+        storedShareTokenHash !== viewToken,
+      "Share token was not stored as a SHA-256 hash"
+    );
+
+    const guestSession = await requestJson("/auth/guest-session", "POST");
+    const guestCookieHeader = guestSession.response.headers.get("set-cookie");
+    assert(Boolean(guestCookieHeader), "Guest session did not set a cookie");
+    guestCookie = guestCookieHeader.split(";")[0];
+
+    const viewAccess = await requestGraphQL(
+      `
+      query AccessSharedBoard($token: String!) {
+        accessSharedBoard(token: $token) {
+          permission
+          board { id shareLinkActive sharePermission }
+        }
+      }
+      `,
+      guestCookie,
+      "",
+      {},
+      { token: viewToken }
+    );
+    const viewAccessResult = viewAccess.payload.data?.accessSharedBoard;
+    assert(!viewAccess.payload.errors, `View shared-board access failed: ${JSON.stringify(viewAccess.payload)}`);
+    assert(viewAccessResult?.permission === "view", "View share link granted the wrong permission");
+
+    const viewCreateNote = await requestGraphQL(
+      `
+      mutation CreateSharedNote($boardId: ID!, $shareToken: String!) {
+        createNote(boardId: $boardId, shareToken: $shareToken, title: "Blocked", content: "Blocked") { id }
+      }
+      `,
+      guestCookie,
+      "",
+      {},
+      { boardId, shareToken: viewToken }
+    );
+    assert(
+      viewCreateNote.payload.data?.createNote == null && viewCreateNote.payload.errors?.length > 0,
+      "View share link allowed note editing"
+    );
+
+    const editShare = await requestGraphQL(
+      `
+      mutation CreateShareLink($boardId: ID!, $permission: BoardPermission!) {
+        createShareLink(boardId: $boardId, permission: $permission)
+      }
+      `,
+      registerCookie,
+      "",
+      {},
+      { boardId, permission: "edit" }
+    );
+    const editToken = editShare.payload.data?.createShareLink;
+    assert(!editShare.payload.errors, `Edit share-link creation failed: ${JSON.stringify(editShare.payload)}`);
+    assert(editToken !== viewToken, "Share-link regeneration reused the previous token");
+
+    const oldTokenAccess = await requestGraphQL(
+      `query($token: String!) { accessSharedBoard(token: $token) { permission } }`,
+      guestCookie,
+      "",
+      {},
+      { token: viewToken }
+    );
+    assert(
+      oldTokenAccess.payload.data?.accessSharedBoard == null && oldTokenAccess.payload.errors?.length > 0,
+      "Regenerating a share link did not revoke the previous token"
+    );
+
+    const editAccess = await requestGraphQL(
+      `query($token: String!) { accessSharedBoard(token: $token) { permission } }`,
+      guestCookie,
+      "",
+      {},
+      { token: editToken }
+    );
+    assert(!editAccess.payload.errors, `Regenerated shared-board access failed: ${JSON.stringify(editAccess.payload)}`);
+    assert(
+      editAccess.payload.data?.accessSharedBoard?.permission === "edit",
+      "Edit share link did not grant edit permission"
+    );
+
+    const revokeShare = await requestGraphQL(
+      `mutation RevokeShareLink($boardId: ID!) { revokeShareLink(boardId: $boardId) }`,
+      registerCookie,
+      "",
+      {},
+      { boardId }
+    );
+    assert(revokeShare.payload.data?.revokeShareLink === true, "Share-link revocation failed");
+
+    const revokedAccess = await requestGraphQL(
+      `query($token: String!) { accessSharedBoard(token: $token) { permission } }`,
+      guestCookie,
+      "",
+      {},
+      { token: editToken }
+    );
+    assert(
+      revokedAccess.payload.data?.accessSharedBoard == null && revokedAccess.payload.errors?.length > 0,
+      "Revoked share link remained usable"
+    );
+
+    const revokedBoard = await pool.query(
+      "SELECT share_token_hash FROM boards WHERE id = $1",
+      [boardId]
+    );
+    assert(revokedBoard.rows[0]?.share_token_hash === null, "Revocation did not clear the stored token hash");
+
     const deleteBoard = await requestGraphQL(
       `mutation { deleteBoard(id: "${boardId}") }`,
       registerCookie
@@ -156,6 +322,10 @@ async function main() {
       )
     );
   } finally {
+    if (guestCookie) {
+      await requestJson("/auth/guest-session", "DELETE", null, guestCookie).catch(() => undefined);
+    }
+
     if (userId) {
       await pool.query("DELETE FROM users WHERE id = $1", [userId]);
     }

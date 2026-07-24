@@ -13,12 +13,29 @@ import type {
 
 type UseBoardsOptions = {
   sessionId: string;
-  currentUserEmail: string | null;
   onStatusChange: (status: string) => void;
   pushToast: (kind: ToastKind, message: string) => void;
 };
 
-export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToast }: UseBoardsOptions) {
+function readShareTokenFromLocation(): string | null {
+  return new URLSearchParams(window.location.hash.slice(1)).get("share");
+}
+
+function clearShareTokenFromLocation(): void {
+  const url = new URL(window.location.href);
+  const hashParameters = new URLSearchParams(url.hash.slice(1));
+
+  if (!hashParameters.has("share")) {
+    return;
+  }
+
+  hashParameters.delete("share");
+  const nextHash = hashParameters.toString();
+  const nextUrl = `${url.pathname}${url.search}${nextHash ? `#${nextHash}` : ""}`;
+  window.history.replaceState(window.history.state, document.title, nextUrl);
+}
+
+export function useBoards({ sessionId, onStatusChange, pushToast }: UseBoardsOptions) {
   const [boards, setBoards] = useState<Board[]>([]);
   const [activeBoardId, setActiveBoardId] = useState("");
   const [activeShareToken, setActiveShareToken] = useState<string | null>(null);
@@ -62,14 +79,11 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
             id
             ownerId
             name
-            shareToken
+            shareLinkActive
             sharePermission
           }
         }
-        `,
-        undefined,
-        sessionId,
-        currentUserEmail
+        `
       );
 
       setBoards(data.listBoards);
@@ -84,7 +98,7 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
     } finally {
       setIsBoardsLoading(false);
     }
-  }, [activeBoardId, currentUserEmail, onStatusChange, sessionId]);
+  }, [activeBoardId, onStatusChange, sessionId]);
 
   const loadCollaborators = useCallback(async () => {
     if (!activeBoard || activeBoard.ownerId !== sessionId) {
@@ -105,9 +119,7 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
           }
         }
         `,
-        { boardId: activeBoard.id },
-        sessionId,
-        currentUserEmail
+        { boardId: activeBoard.id }
       );
 
       setCollaborators(data.listBoardCollaborators);
@@ -116,7 +128,7 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
     } finally {
       setIsCollaboratorsLoading(false);
     }
-  }, [activeBoard, currentUserEmail, onStatusChange, sessionId]);
+  }, [activeBoard, onStatusChange, sessionId]);
 
   useEffect(() => {
     void loadBoards();
@@ -131,7 +143,7 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
       return;
     }
 
-    const shareToken = new URL(window.location.href).searchParams.get("share");
+    const shareToken = readShareTokenFromLocation();
 
     if (!shareToken) {
       return;
@@ -148,21 +160,20 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
                 id
                 ownerId
                 name
-                shareToken
+                shareLinkActive
                 sharePermission
               }
             }
           }
           `,
-          { token: shareToken },
-          sessionId,
-          currentUserEmail
+          { token: shareToken }
         );
 
         setBoards((previousBoards) => mergeBoards(previousBoards, data.accessSharedBoard.board));
         setActiveBoardId(data.accessSharedBoard.board.id);
         setActiveShareToken(shareToken);
         setActivePermission(data.accessSharedBoard.permission);
+        clearShareTokenFromLocation();
         onStatusChange(
           data.accessSharedBoard.permission === "edit"
             ? "Shared board opened with edit access"
@@ -172,7 +183,7 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
         onStatusChange(error instanceof Error ? error.message : "Unable to open shared board");
       }
     })();
-  }, [boards.length, currentUserEmail, onStatusChange, sessionId]);
+  }, [boards.length, onStatusChange, sessionId]);
 
   const selectBoard = useCallback(
     (board: Board) => {
@@ -203,14 +214,12 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
             id
             ownerId
             name
-            shareToken
+            shareLinkActive
             sharePermission
           }
         }
         `,
-        { name: name.trim() },
-        sessionId,
-        currentUserEmail
+        { name: name.trim() }
       );
 
       setBoards((previousBoards) => [data.createBoard, ...previousBoards]);
@@ -225,7 +234,7 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
     } finally {
       setIsCreatingBoard(false);
     }
-  }, [currentUserEmail, onStatusChange, pushToast, sessionId]);
+  }, [onStatusChange, pushToast, sessionId]);
 
   const handleDeleteBoard = useCallback(
     async (boardToDelete: Board) => {
@@ -251,9 +260,7 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
             deleteBoard(id: $id)
           }
           `,
-          { id: boardToDelete.id },
-          sessionId,
-          currentUserEmail
+          { id: boardToDelete.id }
         );
 
         if (!data.deleteBoard) {
@@ -282,7 +289,7 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
         setDeletingBoardId(null);
       }
     },
-    [activeBoardId, boards, currentUserEmail, loadBoards, onStatusChange, pushToast, sessionId]
+    [activeBoardId, boards, loadBoards, onStatusChange, pushToast, sessionId]
   );
 
   const handleShareBoard = useCallback(async (boardToShare?: Board, permission: BoardPermission = "view") => {
@@ -304,9 +311,7 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
           createShareLink(boardId: $boardId, permission: $permission)
         }
         `,
-        { boardId: targetBoard.id, permission },
-        sessionId,
-        currentUserEmail
+        { boardId: targetBoard.id, permission }
       );
 
       const link = buildShareLink(data.createShareLink);
@@ -315,7 +320,12 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
       setBoards((previousBoards) =>
         previousBoards.map((board) =>
           board.id === targetBoard.id
-            ? { ...board, shareToken: data.createShareLink, sharePermission: permission }
+              ? {
+                  ...board,
+                  shareLinkActive: true,
+                  shareToken: data.createShareLink,
+                  sharePermission: permission,
+                }
             : board
         )
       );
@@ -326,13 +336,18 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
       onStatusChange(error instanceof Error ? error.message : "Share link failed");
       pushToast("error", "Unable to create share link");
     }
-  }, [activeBoard, currentUserEmail, onStatusChange, pushToast, sessionId]);
+  }, [activeBoard, onStatusChange, pushToast, sessionId]);
 
   const handleCopyExistingShareLink = useCallback(async (boardToCopy?: Board) => {
     const targetBoard = boardToCopy ?? activeBoard;
 
     if (!targetBoard?.shareToken) {
-      pushToast("info", "This board has no share link yet");
+      pushToast(
+        "info",
+        targetBoard?.shareLinkActive
+          ? "Generate a new link to copy"
+          : "This board has no share link yet"
+      );
       return;
     }
 
@@ -344,6 +359,61 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
       pushToast("error", "Unable to copy share link");
     }
   }, [activeBoard, onStatusChange, pushToast]);
+
+  const handleRevokeShareLink = useCallback(
+    async (boardToRevoke?: Board) => {
+      const targetBoard = boardToRevoke ?? activeBoard;
+
+      if (!targetBoard || targetBoard.ownerId !== sessionId) {
+        pushToast("info", "Only board owner can revoke share links");
+        return;
+      }
+
+      if (!targetBoard.shareLinkActive) {
+        pushToast("info", "This board has no active share link");
+        return;
+      }
+
+      if (!window.confirm(`Revoke the share link for "${targetBoard.name}"?`)) {
+        return;
+      }
+
+      try {
+        const data = await graphQLRequest<{ revokeShareLink: boolean }>(
+          `
+          mutation RevokeShareLink($boardId: ID!) {
+            revokeShareLink(boardId: $boardId)
+          }
+          `,
+          { boardId: targetBoard.id }
+        );
+
+        if (!data.revokeShareLink) {
+          throw new Error("Share link could not be revoked");
+        }
+
+        setBoards((previousBoards) =>
+          previousBoards.map((board) =>
+            board.id === targetBoard.id
+              ? { ...board, shareLinkActive: false, shareToken: null }
+              : board
+          )
+        );
+
+        if (activeBoardId === targetBoard.id) {
+          setActiveShareToken(null);
+          setActivePermission("edit");
+        }
+
+        onStatusChange("Share link revoked");
+        pushToast("success", "Share link revoked");
+      } catch (error) {
+        onStatusChange(error instanceof Error ? error.message : "Unable to revoke share link");
+        pushToast("error", "Unable to revoke share link");
+      }
+    },
+    [activeBoard, activeBoardId, onStatusChange, pushToast, sessionId]
+  );
 
   const handleGrantAccessByEmail = useCallback(async () => {
     if (!activeBoard || activeBoard.ownerId !== sessionId) {
@@ -378,9 +448,7 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
           }
         }
         `,
-        { boardId: activeBoard.id, email, permission },
-        sessionId,
-        currentUserEmail
+        { boardId: activeBoard.id, email, permission }
       );
 
       pushToast("success", `Access updated for ${email}`);
@@ -390,7 +458,7 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
       onStatusChange(error instanceof Error ? error.message : "Unable to grant access");
       pushToast("error", "Unable to grant access");
     }
-  }, [activeBoard, currentUserEmail, loadCollaborators, onStatusChange, pushToast, sessionId]);
+  }, [activeBoard, loadCollaborators, onStatusChange, pushToast, sessionId]);
 
   const handleUpdateCollaboratorPermission = useCallback(
     async (email: string, permission: BoardPermission) => {
@@ -412,9 +480,7 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
             }
           }
           `,
-          { boardId: activeBoard.id, email, permission },
-          sessionId,
-          currentUserEmail
+          { boardId: activeBoard.id, email, permission }
         );
 
         setCollaborators((previousCollaborators) =>
@@ -431,7 +497,7 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
         setCollaboratorActionEmail(null);
       }
     },
-    [activeBoard, currentUserEmail, onStatusChange, pushToast, sessionId]
+    [activeBoard, onStatusChange, pushToast, sessionId]
   );
 
   const handleRemoveCollaborator = useCallback(
@@ -455,9 +521,7 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
             removeBoardCollaborator(boardId: $boardId, email: $email)
           }
           `,
-          { boardId: activeBoard.id, email },
-          sessionId,
-          currentUserEmail
+          { boardId: activeBoard.id, email }
         );
 
         if (!data.removeBoardCollaborator) {
@@ -475,7 +539,7 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
         setCollaboratorActionEmail(null);
       }
     },
-    [activeBoard, currentUserEmail, onStatusChange, pushToast, sessionId]
+    [activeBoard, onStatusChange, pushToast, sessionId]
   );
 
   const resetBoards = useCallback(() => {
@@ -507,6 +571,7 @@ export function useBoards({ sessionId, currentUserEmail, onStatusChange, pushToa
     handleDeleteBoard,
     handleShareBoard,
     handleCopyExistingShareLink,
+    handleRevokeShareLink,
     handleGrantAccessByEmail,
     handleUpdateCollaboratorPermission,
     handleRemoveCollaborator,

@@ -96,7 +96,11 @@ export function SharePermissionDialog({
             disabled={isSubmitting}
           >
             <Link2 size={14} aria-hidden="true" />
-            {isSubmitting ? "Generating..." : board.shareToken ? "Replace link" : "Generate link"}
+            {isSubmitting
+              ? "Generating..."
+              : board.shareLinkActive
+                ? "Replace link"
+                : "Generate link"}
           </button>
         </div>
       </div>

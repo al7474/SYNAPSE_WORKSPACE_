@@ -48,11 +48,16 @@ Keep GraphQL and browser persistence inside hooks or `lib/` modules. Components 
 - Account passwords are stored with bcrypt; raw passwords and session tokens are never stored in PostgreSQL.
 - Account email verification and password recovery use expiring, single-use action tokens whose hashes are stored in PostgreSQL.
 - Backend resolvers use typed ownership (`owner_kind` plus `owner_user_id` or `owner_guest_session_id`) for account and guest authorization. The textual `owner_id` remains a compatibility field.
-- Legacy `x-session-id` and `x-user-email` headers remain isolated to the compatibility fallback; the frontend no longer sends them for account requests.
-- `noteUpdated` subscription events are filtered by owner before sending.
-- Guest and account GraphQL requests and subscriptions use `credentials: include`; no session token is stored in local storage or query strings.
-- Guest sessions expire after `GUEST_SESSION_TTL_MS` and can be revoked from the workspace, which deletes their boards and notes.
-- Account sessions and action tokens are cleaned up on the `AUTH_CLEANUP_INTERVAL_MS` interval.
+
+### Board sharing and authorization
+
+- Every board and note resolver requires a validated account or guest session and checks ownership, collaborator permission, or share-link permission in the backend.
+- Collaborator email authorization uses the authenticated account email resolved into the GraphQL context; browser-provided identity headers are not trusted.
+- Share links use 32 cryptographically random bytes (256 bits), encoded as base64url. PostgreSQL stores only the SHA-256 token hash in `share_token_hash`.
+- The raw token is returned only by `createShareLink`. Generating a new link replaces the stored hash and invalidates the previous link. Owners can revoke a link, which clears the hash.
+- Share links support `view` and `edit`. Read operations accept either permission; note writes require `edit` and are checked again for every request.
+- Browser share URLs place the token in the URL fragment (`#share=...`) rather than the query string. The frontend removes the consumed fragment after successful access and keeps raw tokens out of ordinary board payloads and persistent browser history where possible.
+- Realtime subscriptions revalidate the session and board permission before opening and before delivering each matching event. Revoking a session or share link therefore stops future events on an existing subscription.
 
 ## Security guardrails
 

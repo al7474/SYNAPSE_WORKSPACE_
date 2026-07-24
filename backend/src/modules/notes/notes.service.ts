@@ -33,14 +33,18 @@ type BoardRow = {
   owner_user_id: string | number | null;
   owner_guest_session_id: string | number | null;
   name: string;
-  share_token: string | null;
+  share_token_hash: string | null;
   share_permission: BoardPermission;
   created_at: Date;
   updated_at: Date;
 };
 
+type BoardRecord = Board & {
+  shareTokenHash: string | null;
+};
+
 type BoardAccess = {
-  board: Board;
+  board: BoardRecord;
   permission: BoardPermission;
 };
 
@@ -77,7 +81,7 @@ export class NotesService {
     }
   }
 
-  private toBoard(row: BoardRow): Board {
+  private toBoard(row: BoardRow): BoardRecord {
     return {
       id: String(row.id),
       ownerId: row.owner_id,
@@ -86,15 +90,34 @@ export class NotesService {
       ownerGuestSessionId:
         row.owner_guest_session_id === null ? null : String(row.owner_guest_session_id),
       name: row.name,
-      shareToken: row.share_token,
+      shareLinkActive: row.share_token_hash !== null,
       sharePermission: row.share_permission,
+      shareTokenHash: row.share_token_hash,
       createdAt: row.created_at.toISOString(),
       updatedAt: row.updated_at.toISOString(),
     };
   }
 
   private generateShareToken(): string {
-    return crypto.randomBytes(18).toString("base64url");
+    return crypto.randomBytes(32).toString("base64url");
+  }
+
+  private hashShareToken(token: string): string {
+    return crypto.createHash("sha256").update(token).digest("hex");
+  }
+
+  private matchesShareToken(board: BoardRecord, token: string | null | undefined): boolean {
+    if (!token || !board.shareTokenHash) {
+      return false;
+    }
+
+    const candidateHash = Buffer.from(this.hashShareToken(token), "hex");
+    const storedHash = Buffer.from(board.shareTokenHash, "hex");
+
+    return (
+      candidateHash.length === storedHash.length &&
+      crypto.timingSafeEqual(candidateHash, storedHash)
+    );
   }
 
   private buildOwnerPredicate(
@@ -162,7 +185,7 @@ export class NotesService {
     const boardResult = await this.pool.query(
       `
       SELECT id, owner_id, owner_kind, owner_user_id, owner_guest_session_id,
-         name, share_token, share_permission, created_at, updated_at
+        name, share_token_hash, share_permission, created_at, updated_at
       FROM boards
       WHERE id = $1
       `,
@@ -200,7 +223,7 @@ export class NotesService {
       }
     }
 
-    if (!shareToken || !board.shareToken || shareToken !== board.shareToken) {
+    if (!this.matchesShareToken(board, shareToken)) {
       throw new Error("Access denied for this board");
     }
 
@@ -222,7 +245,7 @@ export class NotesService {
     const result = await this.pool.query(
       `
       SELECT id, owner_id, owner_kind, owner_user_id, owner_guest_session_id,
-         name, share_token, share_permission, created_at, updated_at
+        name, share_token_hash, share_permission, created_at, updated_at
       FROM boards
       WHERE ${ownerPredicate.clause}
       ORDER BY updated_at DESC
@@ -246,7 +269,7 @@ export class NotesService {
     const collaboratorBoards = await this.pool.query(
       `
       SELECT b.id, b.owner_id, b.owner_kind, b.owner_user_id, b.owner_guest_session_id,
-         b.name, b.share_token, b.share_permission, b.created_at, b.updated_at
+        b.name, b.share_token_hash, b.share_permission, b.created_at, b.updated_at
       FROM boards b
       INNER JOIN board_collaborators c ON c.board_id = b.id
       WHERE c.invited_email = $1
@@ -386,7 +409,7 @@ export class NotesService {
       )
       VALUES ($1, $2, $3, $4, $5)
       RETURNING id, owner_id, owner_kind, owner_user_id, owner_guest_session_id,
-                name, share_token, share_permission, created_at, updated_at
+                name, share_token_hash, share_permission, created_at, updated_at
       `,
       [
         ownerId,
@@ -420,7 +443,7 @@ export class NotesService {
           updated_at = NOW()
       WHERE id = $2 AND ${ownerPredicate.clause}
       RETURNING id, owner_id, owner_kind, owner_user_id, owner_guest_session_id,
-            name, share_token, share_permission, created_at, updated_at
+        name, share_token_hash, share_permission, created_at, updated_at
       `,
       [trimmed, boardId, ...ownerPredicate.values]
     );
@@ -452,25 +475,45 @@ export class NotesService {
     ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
   ): Promise<string> {
     const token = this.generateShareToken();
-    const ownerPredicate = this.buildOwnerPredicate(ownerId, ownerMetadata, 3);
+    const tokenHash = this.hashShareToken(token);
+    const ownerPredicate = this.buildOwnerPredicate(ownerId, ownerMetadata, 4);
 
     const result = await this.pool.query(
       `
       UPDATE boards
-      SET share_token = $1,
+      SET share_token_hash = $1,
           share_permission = $2,
           updated_at = NOW()
         WHERE id = $3 AND ${ownerPredicate.clause}
-      RETURNING share_token
+      RETURNING id
       `,
-        [token, permission, boardId, ...ownerPredicate.values]
+      [tokenHash, permission, boardId, ...ownerPredicate.values]
     );
 
     if ((result.rowCount ?? 0) === 0) {
       throw new Error("Board not found");
     }
 
-    return result.rows[0].share_token as string;
+    return token;
+  }
+
+  async revokeShareLink(
+    ownerId: string,
+    boardId: string,
+    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+  ): Promise<boolean> {
+    const ownerPredicate = this.buildOwnerPredicate(ownerId, ownerMetadata, 2);
+    const result = await this.pool.query(
+      `
+      UPDATE boards
+      SET share_token_hash = NULL,
+          updated_at = NOW()
+      WHERE id = $1 AND ${ownerPredicate.clause}
+      `,
+      [boardId, ...ownerPredicate.values]
+    );
+
+    return (result.rowCount ?? 0) > 0;
   }
 
   async accessSharedBoard(
@@ -482,11 +525,11 @@ export class NotesService {
     const result = await this.pool.query(
       `
       SELECT id, owner_id, owner_kind, owner_user_id, owner_guest_session_id,
-         name, share_token, share_permission, created_at, updated_at
+        name, share_token_hash, share_permission, created_at, updated_at
       FROM boards
-      WHERE share_token = $1
+      WHERE share_token_hash = $1
       `,
-      [token]
+      [this.hashShareToken(token)]
     );
 
     if ((result.rowCount ?? 0) === 0) {
@@ -524,6 +567,24 @@ export class NotesService {
       board,
       permission: board.sharePermission,
     };
+  }
+
+  async assertBoardAccess(
+    ownerId: string,
+    userEmail: string | undefined,
+    boardId: string,
+    shareToken: string | undefined,
+    requireEdit = false,
+    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+  ): Promise<void> {
+    await this.requireBoardAccess(
+      ownerId,
+      userEmail,
+      boardId,
+      shareToken ?? null,
+      requireEdit,
+      ownerMetadata
+    );
   }
 
   async createNote(input: CreateNoteInput): Promise<Note> {

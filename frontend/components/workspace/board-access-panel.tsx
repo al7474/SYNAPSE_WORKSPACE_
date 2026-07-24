@@ -69,7 +69,7 @@ export function BoardAccessPanel({
           </span>
         </div>
 
-        {board.shareToken && (
+        {board.shareLinkActive && (
           <div className="flex items-center gap-3 border-t border-[rgba(255,255,255,0.1)] px-4 py-3">
             <span className="grid h-8 w-8 shrink-0 place-items-center border border-[rgba(51,209,122,0.35)] text-[#7ee2a8]">
               <Link2 size={14} aria-hidden="true" />

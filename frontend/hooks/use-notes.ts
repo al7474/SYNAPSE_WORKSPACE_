@@ -6,7 +6,6 @@ import type { Note, NotesFilter, ToastKind } from "@/types/workspace";
 
 type UseNotesOptions = {
   sessionId: string;
-  currentUserEmail: string | null;
   activeBoardId: string;
   activeShareToken: string | null;
   canEditBoard: boolean;
@@ -16,7 +15,6 @@ type UseNotesOptions = {
 
 export function useNotes({
   sessionId,
-  currentUserEmail,
   activeBoardId,
   activeShareToken,
   canEditBoard,
@@ -86,9 +84,7 @@ export function useNotes({
           }
         }
         `,
-        { boardId: activeBoardId, shareToken: activeShareToken },
-        sessionId,
-        currentUserEmail
+        { boardId: activeBoardId, shareToken: activeShareToken }
       );
 
       setNotes(data.listNotes);
@@ -100,7 +96,7 @@ export function useNotes({
     } finally {
       setIsLoading(false);
     }
-  }, [activeBoardId, activeShareToken, currentUserEmail, onStatusChange, sessionId]);
+  }, [activeBoardId, activeShareToken, onStatusChange, sessionId]);
 
   useEffect(() => {
     void loadNotes();
@@ -112,7 +108,7 @@ export function useNotes({
     }
 
     const eventSource = new EventSource(
-      buildNoteSubscriptionUrl(activeBoardId, activeShareToken, sessionId, currentUserEmail),
+      buildNoteSubscriptionUrl(activeBoardId, activeShareToken),
       { withCredentials: true }
     );
 
@@ -146,7 +142,7 @@ export function useNotes({
     };
 
     return () => eventSource.close();
-  }, [activeBoardId, activeShareToken, currentUserEmail, pushToast, sessionId]);
+  }, [activeBoardId, activeShareToken, pushToast, sessionId]);
 
   useEffect(() => {
     if (!activeBoardId) {
@@ -213,9 +209,7 @@ export function useNotes({
             id: selectedId,
             title: draftTitle,
             content: draftContent,
-          },
-          sessionId,
-          currentUserEmail
+          }
         );
 
         const updatedNote = data.updateNote;
@@ -237,7 +231,6 @@ export function useNotes({
     activeBoardId,
     activeShareToken,
     canEditBoard,
-    currentUserEmail,
     draftContent,
     draftTitle,
     onStatusChange,
@@ -296,9 +289,7 @@ export function useNotes({
             query,
             limit: 8,
             minSimilarity,
-          },
-          sessionId,
-          currentUserEmail
+          }
         );
 
         if (requestId !== semanticRequestSeqRef.current) {
@@ -319,7 +310,7 @@ export function useNotes({
         }
       }
     },
-    [activeBoardId, activeShareToken, currentUserEmail, minSimilarity, onStatusChange, sessionId]
+    [activeBoardId, activeShareToken, minSimilarity, onStatusChange, sessionId]
   );
 
   useEffect(() => {
@@ -364,9 +355,7 @@ export function useNotes({
           shareToken: activeShareToken,
           title: "Untitled Note",
           content: "",
-        },
-        sessionId,
-        currentUserEmail
+        }
       );
 
       const createdNote = data.createNote;
@@ -388,7 +377,6 @@ export function useNotes({
     activeBoardId,
     activeShareToken,
     canEditBoard,
-    currentUserEmail,
     loadNotes,
     onStatusChange,
     pushToast,
@@ -414,9 +402,7 @@ export function useNotes({
           boardId: activeBoardId,
           shareToken: activeShareToken,
           id: selectedId,
-        },
-        sessionId,
-        currentUserEmail
+        }
       );
 
       if (!data.deleteNote) {
@@ -448,7 +434,6 @@ export function useNotes({
     activeBoardId,
     activeShareToken,
     canEditBoard,
-    currentUserEmail,
     notes,
     onStatusChange,
     pushToast,

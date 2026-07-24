@@ -13,5 +13,8 @@ export function mergeBoards(existingBoards: Board[], incomingBoard: Board): Boar
 }
 
 export function buildShareLink(token: string): string {
-  return `${window.location.origin}${window.location.pathname}?share=${token}`;
+  const url = new URL(window.location.href);
+  url.search = "";
+  url.hash = `share=${encodeURIComponent(token)}`;
+  return url.toString();
 }

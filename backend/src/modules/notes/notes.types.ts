@@ -23,7 +23,7 @@ export interface Board {
   ownerUserId: string | null;
   ownerGuestSessionId: string | null;
   name: string;
-  shareToken: string | null;
+  shareLinkActive: boolean;
   sharePermission: BoardPermission;
   createdAt: string;
   updatedAt: string;

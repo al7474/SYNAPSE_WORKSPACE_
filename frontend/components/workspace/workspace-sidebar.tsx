@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Copy, Link2, MoreHorizontal, Plus, Trash2, Users } from "lucide-react";
+import { Copy, Link2, Link2Off, MoreHorizontal, Plus, Trash2, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { SharePermissionDialog } from "@/components/workspace/share-permission-dialog";
 import type { Board, BoardPermission, SessionMode } from "@/types/workspace";
@@ -22,6 +22,7 @@ type WorkspaceSidebarProps = {
   onDeleteBoard: (board: Board) => void | Promise<void>;
   onShareBoard: (board: Board, permission: BoardPermission) => void | Promise<void>;
   onCopyShareLink: (board: Board) => void | Promise<void>;
+  onRevokeShareLink: (board: Board) => void | Promise<void>;
   onShowBoardAccess: (board: Board) => void;
   onCreateBoard: () => void | Promise<void>;
   onDeleteDemoWorkspace: () => void | Promise<void>;
@@ -43,6 +44,7 @@ export function WorkspaceSidebar({
   onDeleteBoard,
   onShareBoard,
   onCopyShareLink,
+  onRevokeShareLink,
   onShowBoardAccess,
   onCreateBoard,
   onDeleteDemoWorkspace,
@@ -55,7 +57,7 @@ export function WorkspaceSidebar({
   const openShareDialog = (board: Board) => {
     setOpenBoardMenuId(null);
     setShareTargetBoard(board);
-    setSharePermission(board.shareToken ? board.sharePermission : "view");
+    setSharePermission(board.shareLinkActive ? board.sharePermission : "view");
   };
 
   const confirmShare = async () => {
@@ -146,10 +148,10 @@ export function WorkspaceSidebar({
                       >
                         <div className="flex items-center gap-2 border-b border-[rgba(255,255,255,0.1)] px-2 pb-2 text-[10px] uppercase tracking-[0.45px] text-[#fafafa]">
                           <span
-                            className={`h-2 w-2 shrink-0 rounded-full ${board.shareToken ? "bg-[#33d17a]" : "bg-[#f52f39]"}`}
+                            className={`h-2 w-2 shrink-0 rounded-full ${board.shareLinkActive ? "bg-[#33d17a]" : "bg-[#f52f39]"}`}
                             aria-hidden="true"
                           />
-                          <span className="truncate">{board.shareToken ? "Link sharing active" : "No active link"}</span>
+                          <span className="truncate">{board.shareLinkActive ? "Link sharing active" : "No active link"}</span>
                         </div>
 
                         <button
@@ -172,8 +174,22 @@ export function WorkspaceSidebar({
                           role="menuitem"
                         >
                           <Link2 size={14} aria-hidden="true" />
-                          <span>{board.shareToken ? "Generate new link" : "Generate link"}</span>
+                          <span>{board.shareLinkActive ? "Generate new link" : "Generate link"}</span>
                         </button>
+                        {board.shareLinkActive && (
+                          <button
+                            type="button"
+                            className="flex w-full items-center gap-2 px-2 py-2 text-left text-[10px] uppercase tracking-[0.45px] text-[#a1a1a1] hover:bg-[#262626] hover:text-[#fca5a5]"
+                            onClick={() => {
+                              setOpenBoardMenuId(null);
+                              void onRevokeShareLink(board);
+                            }}
+                            role="menuitem"
+                          >
+                            <Link2Off size={14} aria-hidden="true" />
+                            <span>Revoke link</span>
+                          </button>
+                        )}
                         {board.shareToken && (
                           <div className="mt-1 border-t border-[rgba(255,255,255,0.1)] pt-2">
                             <button

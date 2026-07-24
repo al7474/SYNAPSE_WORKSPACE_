@@ -17,7 +17,8 @@ export type Board = {
   id: string;
   ownerId: string;
   name: string;
-  shareToken: string | null;
+  shareLinkActive: boolean;
+  shareToken?: string | null;
   sharePermission: BoardPermission;
 };
 
@@ -38,7 +39,7 @@ export type Toast = {
   message: string;
 };
 
-export type StoredSession = {
+export type SessionState = {
   sessionId: string;
   sessionMode: SessionMode;
   userEmail: string | null;
