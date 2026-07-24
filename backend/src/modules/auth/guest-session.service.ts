@@ -10,6 +10,7 @@ type GuestSessionRow = {
 };
 
 export type GuestSession = {
+  id: string;
   ownerId: string;
   expiresAt: Date;
   token: string;
@@ -87,6 +88,7 @@ export class GuestSessionService {
     const row = result.rows[0];
 
     return {
+      id: String(row.id),
       ownerId: row.owner_id,
       expiresAt: row.expires_at,
       token,
@@ -115,6 +117,7 @@ export class GuestSessionService {
     }
 
     return {
+      id: String(row.id),
       ownerId: row.owner_id,
       expiresAt: row.expires_at,
       token,

@@ -1,3 +1,7 @@
+import type { OwnerKind, OwnerMetadata } from "../auth/auth.types.js";
+
+export type { OwnerKind, OwnerMetadata } from "../auth/auth.types.js";
+
 export interface Note {
   id: string;
   boardId: string;
@@ -15,6 +19,9 @@ export type BoardPermission = "view" | "edit";
 export interface Board {
   id: string;
   ownerId: string;
+  ownerKind: OwnerKind;
+  ownerUserId: string | null;
+  ownerGuestSessionId: string | null;
   name: string;
   shareToken: string | null;
   sharePermission: BoardPermission;
@@ -30,6 +37,7 @@ export interface SharedBoardAccess {
 export interface BoardCollaborator {
   boardId: string;
   email: string;
+  userId: string | null;
   permission: BoardPermission;
   createdAt: string;
   updatedAt: string;
@@ -38,6 +46,7 @@ export interface BoardCollaborator {
 export interface AccessIdentity {
   ownerId: string;
   userEmail?: string;
+  ownerMetadata?: OwnerMetadata;
 }
 
 export interface CreateNoteInput {

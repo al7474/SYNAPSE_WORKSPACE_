@@ -1,4 +1,5 @@
 import { createSchema } from "graphql-yoga";
+import type { OwnerMetadata } from "../modules/auth/auth.types.js";
 import type { NotesService } from "../modules/notes/notes.service.js";
 import type { BoardPermission, Note } from "../modules/notes/notes.types.js";
 
@@ -6,6 +7,7 @@ interface GraphQLContext {
   notesService: NotesService;
   sessionId: string | null;
   userEmail: string | null;
+  ownerMetadata: OwnerMetadata;
 }
 
 interface NoteUpdatedPubSub {
@@ -104,7 +106,11 @@ export function buildSchema(pubSub: NoteUpdatedPubSub) {
       Query: {
         listBoards: async (_parent, _args, ctx) => {
           const sessionId = requireSessionId(ctx);
-          return ctx.notesService.listBoards(sessionId, ctx.userEmail ?? undefined);
+          return ctx.notesService.listBoards(
+            sessionId,
+            ctx.userEmail ?? undefined,
+            ctx.ownerMetadata
+          );
         },
         listBoardCollaborators: async (_parent, args, ctx) => {
           const sessionId = requireSessionId(ctx);
@@ -136,7 +142,7 @@ export function buildSchema(pubSub: NoteUpdatedPubSub) {
       Mutation: {
         createBoard: async (_parent, args, ctx) => {
           const sessionId = requireSessionId(ctx);
-          return ctx.notesService.createBoard(sessionId, args.name);
+          return ctx.notesService.createBoard(sessionId, args.name, ctx.ownerMetadata);
         },
         updateBoard: async (_parent, args, ctx) => {
           const sessionId = requireSessionId(ctx);

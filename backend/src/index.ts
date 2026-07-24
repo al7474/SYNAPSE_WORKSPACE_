@@ -10,6 +10,7 @@ import {
   readGuestSessionToken,
   serializeGuestSessionCookie,
 } from "./modules/auth/guest-session.service.js";
+import type { OwnerMetadata } from "./modules/auth/auth.types.js";
 import { NotesService } from "./modules/notes/notes.service.js";
 import type { Note } from "./modules/notes/notes.types.js";
 
@@ -149,18 +150,25 @@ async function bootstrap() {
 
       if (guestToken) {
         const guestSession = await guestSessions.resolve(guestToken);
+        const ownerMetadata: OwnerMetadata = guestSession
+          ? { ownerKind: "guest", ownerGuestSessionId: guestSession.id }
+          : { ownerKind: "legacy" };
 
         return {
           notesService,
           sessionId: guestSession?.ownerId ?? null,
           userEmail: null,
+          ownerMetadata,
         };
       }
+
+      const ownerMetadata: OwnerMetadata = { ownerKind: "legacy" };
 
       return {
         notesService,
         sessionId: extractLegacySessionId(request),
         userEmail: extractLegacyUserEmail(request),
+        ownerMetadata,
       };
     },
     cors: {

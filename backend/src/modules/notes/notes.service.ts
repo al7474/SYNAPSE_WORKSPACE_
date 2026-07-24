@@ -1,5 +1,6 @@
 import type { Pool } from "pg";
 import crypto from "node:crypto";
+import type { OwnerKind, OwnerMetadata } from "../auth/auth.types.js";
 import { OpenRouterEmbeddingsService } from "../embeddings/openrouter-embeddings.service.js";
 import type {
   Board,
@@ -28,6 +29,9 @@ type NoteRow = {
 type BoardRow = {
   id: string | number;
   owner_id: string;
+  owner_kind: OwnerKind;
+  owner_user_id: string | number | null;
+  owner_guest_session_id: string | number | null;
   name: string;
   share_token: string | null;
   share_permission: BoardPermission;
@@ -42,7 +46,8 @@ type BoardAccess = {
 
 type BoardCollaboratorRow = {
   board_id: string | number;
-  email: string;
+  invited_email: string;
+  user_id: string | number | null;
   permission: BoardPermission;
   created_at: Date;
   updated_at: Date;
@@ -71,6 +76,10 @@ export class NotesService {
     return {
       id: String(row.id),
       ownerId: row.owner_id,
+      ownerKind: row.owner_kind,
+      ownerUserId: row.owner_user_id === null ? null : String(row.owner_user_id),
+      ownerGuestSessionId:
+        row.owner_guest_session_id === null ? null : String(row.owner_guest_session_id),
       name: row.name,
       shareToken: row.share_token,
       sharePermission: row.share_permission,
@@ -86,7 +95,8 @@ export class NotesService {
   private toBoardCollaborator(row: BoardCollaboratorRow): BoardCollaborator {
     return {
       boardId: String(row.board_id),
-      email: row.email,
+      email: row.invited_email,
+      userId: row.user_id === null ? null : String(row.user_id),
       permission: row.permission,
       createdAt: row.created_at.toISOString(),
       updatedAt: row.updated_at.toISOString(),
@@ -102,7 +112,8 @@ export class NotesService {
   ): Promise<BoardAccess> {
     const boardResult = await this.pool.query(
       `
-      SELECT id, owner_id, name, share_token, share_permission, created_at, updated_at
+      SELECT id, owner_id, owner_kind, owner_user_id, owner_guest_session_id,
+         name, share_token, share_permission, created_at, updated_at
       FROM boards
       WHERE id = $1
       `,
@@ -124,7 +135,7 @@ export class NotesService {
         `
         SELECT permission
         FROM board_collaborators
-        WHERE board_id = $1 AND email = $2
+        WHERE board_id = $1 AND invited_email = $2
         `,
         [boardId, userEmail.trim().toLowerCase()]
       );
@@ -153,10 +164,15 @@ export class NotesService {
     return { board, permission: board.sharePermission };
   }
 
-  async listBoards(ownerId: string, userEmail?: string): Promise<Board[]> {
+  async listBoards(
+    ownerId: string,
+    userEmail?: string,
+    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+  ): Promise<Board[]> {
     const result = await this.pool.query(
       `
-      SELECT id, owner_id, name, share_token, share_permission, created_at, updated_at
+      SELECT id, owner_id, owner_kind, owner_user_id, owner_guest_session_id,
+         name, share_token, share_permission, created_at, updated_at
       FROM boards
       WHERE owner_id = $1
       ORDER BY updated_at DESC
@@ -170,7 +186,7 @@ export class NotesService {
 
     if (!normalizedEmail) {
       if (ownedBoards.length === 0) {
-        const created = await this.createBoard(ownerId, "My First Board");
+        const created = await this.createBoard(ownerId, "My First Board", ownerMetadata);
         return [created];
       }
 
@@ -179,10 +195,11 @@ export class NotesService {
 
     const collaboratorBoards = await this.pool.query(
       `
-      SELECT b.id, b.owner_id, b.name, b.share_token, b.share_permission, b.created_at, b.updated_at
+      SELECT b.id, b.owner_id, b.owner_kind, b.owner_user_id, b.owner_guest_session_id,
+         b.name, b.share_token, b.share_permission, b.created_at, b.updated_at
       FROM boards b
       INNER JOIN board_collaborators c ON c.board_id = b.id
-      WHERE c.email = $1
+      WHERE c.invited_email = $1
       ORDER BY b.updated_at DESC
       `,
       [normalizedEmail]
@@ -199,7 +216,7 @@ export class NotesService {
     }
 
     if (merged.length === 0) {
-      const created = await this.createBoard(ownerId, "My First Board");
+      const created = await this.createBoard(ownerId, "My First Board", ownerMetadata);
       return [created];
     }
 
@@ -218,7 +235,7 @@ export class NotesService {
 
     const result = await this.pool.query(
       `
-      SELECT board_id, email, permission, created_at, updated_at
+      SELECT board_id, invited_email, user_id, permission, created_at, updated_at
       FROM board_collaborators
       WHERE board_id = $1
       ORDER BY updated_at DESC
@@ -252,13 +269,13 @@ export class NotesService {
 
     const result = await this.pool.query(
       `
-      INSERT INTO board_collaborators (board_id, email, permission)
+      INSERT INTO board_collaborators (board_id, invited_email, permission)
       VALUES ($1, $2, $3)
-      ON CONFLICT (board_id, email)
+      ON CONFLICT (board_id, invited_email)
       DO UPDATE SET
         permission = EXCLUDED.permission,
         updated_at = NOW()
-      RETURNING board_id, email, permission, created_at, updated_at
+      RETURNING board_id, invited_email, user_id, permission, created_at, updated_at
       `,
       [boardId, normalizedEmail, permission]
     );
@@ -277,14 +294,18 @@ export class NotesService {
     }
 
     const result = await this.pool.query(
-      `DELETE FROM board_collaborators WHERE board_id = $1 AND email = $2`,
+      `DELETE FROM board_collaborators WHERE board_id = $1 AND invited_email = $2`,
       [boardId, email.trim().toLowerCase()]
     );
 
     return (result.rowCount ?? 0) > 0;
   }
 
-  async createBoard(ownerId: string, name: string): Promise<Board> {
+  async createBoard(
+    ownerId: string,
+    name: string,
+    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+  ): Promise<Board> {
     const trimmed = name.trim();
 
     if (!trimmed) {
@@ -293,11 +314,24 @@ export class NotesService {
 
     const result = await this.pool.query(
       `
-      INSERT INTO boards (owner_id, name)
-      VALUES ($1, $2)
-      RETURNING id, owner_id, name, share_token, share_permission, created_at, updated_at
+      INSERT INTO boards (
+        owner_id,
+        owner_kind,
+        owner_user_id,
+        owner_guest_session_id,
+        name
+      )
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id, owner_id, owner_kind, owner_user_id, owner_guest_session_id,
+                name, share_token, share_permission, created_at, updated_at
       `,
-      [ownerId, trimmed]
+      [
+        ownerId,
+        ownerMetadata.ownerKind,
+        ownerMetadata.ownerUserId ?? null,
+        ownerMetadata.ownerGuestSessionId ?? null,
+        trimmed,
+      ]
     );
 
     return this.toBoard(result.rows[0] as BoardRow);
@@ -316,7 +350,8 @@ export class NotesService {
       SET name = $1,
           updated_at = NOW()
       WHERE id = $2 AND owner_id = $3
-      RETURNING id, owner_id, name, share_token, share_permission, created_at, updated_at
+      RETURNING id, owner_id, owner_kind, owner_user_id, owner_guest_session_id,
+            name, share_token, share_permission, created_at, updated_at
       `,
       [trimmed, boardId, ownerId]
     );
@@ -358,7 +393,8 @@ export class NotesService {
   async accessSharedBoard(ownerId: string, userEmail: string | undefined, token: string): Promise<SharedBoardAccess> {
     const result = await this.pool.query(
       `
-      SELECT id, owner_id, name, share_token, share_permission, created_at, updated_at
+      SELECT id, owner_id, owner_kind, owner_user_id, owner_guest_session_id,
+         name, share_token, share_permission, created_at, updated_at
       FROM boards
       WHERE share_token = $1
       `,
@@ -383,7 +419,7 @@ export class NotesService {
         `
         SELECT permission
         FROM board_collaborators
-        WHERE board_id = $1 AND email = $2
+        WHERE board_id = $1 AND invited_email = $2
         `,
         [board.id, userEmail.trim().toLowerCase()]
       );
@@ -414,11 +450,31 @@ export class NotesService {
 
     const result = await this.pool.query(
       `
-      INSERT INTO notes (owner_id, board_id, title, content, embedding, embedding_pending)
-      VALUES ($1, $2, $3, $4, $5::vector, $6)
+      INSERT INTO notes (
+        owner_id,
+        owner_kind,
+        owner_user_id,
+        owner_guest_session_id,
+        board_id,
+        title,
+        content,
+        embedding,
+        embedding_pending
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::vector, $9)
       RETURNING id, board_id, title, content, embedding_pending, created_at, updated_at, owner_id
       `,
-      [access.board.ownerId, input.boardId, input.title, input.content, embedding.vectorLiteral, embedding.pending]
+      [
+        access.board.ownerId,
+        access.board.ownerKind,
+        access.board.ownerUserId,
+        access.board.ownerGuestSessionId,
+        input.boardId,
+        input.title,
+        input.content,
+        embedding.vectorLiteral,
+        embedding.pending,
+      ]
     );
 
     return this.toNote(result.rows[0]);
