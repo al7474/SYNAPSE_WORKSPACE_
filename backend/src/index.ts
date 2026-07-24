@@ -11,10 +11,18 @@ import {
   serializeGuestSessionCookie,
 } from "./modules/auth/guest-session.service.js";
 import type { OwnerMetadata } from "./modules/auth/auth.types.js";
+import { AuthEmailService } from "./modules/auth/auth-email.service.js";
+import {
+  AUTH_PATHS,
+  handleAuthRequest,
+  readAuthSessionToken,
+} from "./modules/auth/auth-http.js";
+import { AuthService } from "./modules/auth/auth.service.js";
 import { NotesService } from "./modules/notes/notes.service.js";
 import type { Note } from "./modules/notes/notes.types.js";
 
 const GUEST_SESSION_PATH = "/auth/guest-session";
+const AUTH_PATH_SET = new Set<string>(Object.values(AUTH_PATHS));
 
 function extractLegacySessionId(request: Request): string | null {
   const headerValue = request.headers.get("x-session-id")?.trim();
@@ -77,10 +85,12 @@ async function handleGuestSessionRequest(
     return;
   }
 
-  const token = readGuestSessionToken(request);
+  const guestSessionCookieValue = readGuestSessionToken(request);
 
   if (request.method === "GET") {
-    const session = token ? await guestSessions.resolve(token) : null;
+    const session = guestSessionCookieValue
+      ? await guestSessions.resolve(guestSessionCookieValue)
+      : null;
 
     if (!session) {
       sendJson(response, 401, { error: "No active demo session" });
@@ -97,7 +107,7 @@ async function handleGuestSessionRequest(
   }
 
   if (request.method === "POST") {
-    const session = await guestSessions.createOrReuse(token);
+    const session = await guestSessions.createOrReuse(guestSessionCookieValue);
     const maxAgeSeconds = Math.max(1, Math.floor((session.expiresAt.getTime() - Date.now()) / 1000));
 
     response.setHeader(
@@ -114,8 +124,8 @@ async function handleGuestSessionRequest(
   }
 
   if (request.method === "DELETE") {
-    if (token) {
-      await guestSessions.revoke(token);
+    if (guestSessionCookieValue) {
+      await guestSessions.revoke(guestSessionCookieValue);
     }
 
     response.setHeader("Set-Cookie", clearGuestSessionCookie(env.isProduction));
@@ -136,6 +146,19 @@ async function bootstrap() {
     env.embeddingDimension
   );
   const guestSessions = new GuestSessionService(pool, env.guestSessionTtlMs);
+  const authService = new AuthService(pool, {
+    sessionTtlMs: env.authSessionTtlMs,
+    actionTokenTtlMs: env.authActionTokenTtlMs,
+    bcryptCost: env.authBcryptCost,
+  });
+  const authEmailService = new AuthEmailService({
+    provider: env.authEmailProvider,
+    apiKey: env.resendApiKey,
+    from: env.authEmailFrom,
+    backendPublicUrl: env.authPublicUrl,
+    frontendUrl: env.authFrontendUrl,
+    isProduction: env.isProduction,
+  });
   const notesService = new NotesService(pool, embeddingsService);
 
   const yoga = createYoga({
@@ -146,10 +169,25 @@ async function bootstrap() {
       subscribe: (topic) => pubSub.subscribe(topic),
     }),
     context: async ({ request }) => {
-      const guestToken = readGuestSessionToken(request);
+      const authSessionCookieValue = readAuthSessionToken(request);
 
-      if (guestToken) {
-        const guestSession = await guestSessions.resolve(guestToken);
+      if (authSessionCookieValue) {
+        const authSession = await authService.resolveSession(authSessionCookieValue);
+
+        return {
+          notesService,
+          sessionId: authSession?.user.id ?? null,
+          userEmail: authSession?.user.email ?? null,
+          ownerMetadata: authSession
+            ? { ownerKind: "user", ownerUserId: authSession.user.id }
+            : { ownerKind: "legacy" },
+        };
+      }
+
+      const guestSessionCookieValue = readGuestSessionToken(request);
+
+      if (guestSessionCookieValue) {
+        const guestSession = await guestSessions.resolve(guestSessionCookieValue);
         const ownerMetadata: OwnerMetadata = guestSession
           ? { ownerKind: "guest", ownerGuestSessionId: guestSession.id }
           : { ownerKind: "legacy" };
@@ -182,13 +220,39 @@ async function bootstrap() {
   const server = createServer((request, response) => {
     const requestUrl = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
 
-    if (requestUrl.pathname === GUEST_SESSION_PATH) {
-      const webRequest = new Request(`http://${request.headers.host || "localhost"}${request.url || "/"}`, {
+    if (requestUrl.pathname === GUEST_SESSION_PATH || AUTH_PATH_SET.has(requestUrl.pathname)) {
+      const requestInit: RequestInit & { duplex?: "half" } = {
         method: request.method,
         headers: request.headers as HeadersInit,
-      });
+      };
 
-      void handleGuestSessionRequest(webRequest, response, guestSessions).catch((error) => {
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        requestInit.body = request as unknown as BodyInit;
+        requestInit.duplex = "half";
+      }
+
+      const webRequest = new Request(
+        `http://${request.headers.host || "localhost"}${request.url || "/"}`,
+        requestInit
+      );
+
+      setAuthCorsHeaders(webRequest, response);
+
+      if (request.method === "OPTIONS") {
+        response.statusCode = 204;
+        response.end();
+        return;
+      }
+
+      const handler = requestUrl.pathname === GUEST_SESSION_PATH
+        ? handleGuestSessionRequest(webRequest, response, guestSessions)
+        : handleAuthRequest(webRequest, response, {
+            authService,
+            emailService: authEmailService,
+            isProduction: env.isProduction,
+          });
+
+      void handler.catch((error) => {
         console.error("Guest session request failed:", error);
 
         if (!response.headersSent) {
@@ -257,6 +321,27 @@ async function bootstrap() {
         running = false;
       }
     }, env.guestSessionCleanupIntervalMs);
+
+    intervalId.unref();
+  }
+
+  if (env.authCleanupIntervalMs > 0) {
+    let running = false;
+    const intervalId = setInterval(async () => {
+      if (running) {
+        return;
+      }
+
+      running = true;
+
+      try {
+        await authService.purgeExpired();
+      } catch (error) {
+        console.error("Authentication cleanup error:", error);
+      } finally {
+        running = false;
+      }
+    }, env.authCleanupIntervalMs);
 
     intervalId.unref();
   }

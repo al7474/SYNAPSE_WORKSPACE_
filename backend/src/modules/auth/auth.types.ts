@@ -1,5 +1,7 @@
 export type OwnerKind = "user" | "guest" | "legacy";
 
+export type AuthActionTokenPurpose = "email_verification" | "password_reset";
+
 export interface OwnerMetadata {
   ownerKind: OwnerKind;
   ownerUserId?: string | null;
@@ -24,4 +26,17 @@ export interface AuthSessionRecord {
   expiresAt: string;
   revokedAt: string | null;
   lastActivityAt: string;
+}
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+  emailVerifiedAt: string | null;
+}
+
+export interface AuthSessionContext {
+  sessionId: string;
+  user: AuthUser;
+  expiresAt: Date;
 }

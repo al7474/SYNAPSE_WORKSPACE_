@@ -114,17 +114,23 @@ export function buildSchema(pubSub: NoteUpdatedPubSub) {
         },
         listBoardCollaborators: async (_parent, args, ctx) => {
           const sessionId = requireSessionId(ctx);
-          return ctx.notesService.listBoardCollaborators(sessionId, args.boardId);
+          return ctx.notesService.listBoardCollaborators(sessionId, args.boardId, ctx.ownerMetadata);
         },
         accessSharedBoard: async (_parent, args, ctx) => {
           const sessionId = requireSessionId(ctx);
-          return ctx.notesService.accessSharedBoard(sessionId, ctx.userEmail ?? undefined, args.token);
+          return ctx.notesService.accessSharedBoard(
+            sessionId,
+            ctx.userEmail ?? undefined,
+            args.token,
+            ctx.ownerMetadata
+          );
         },
         listNotes: async (_parent, args, ctx) => {
           const sessionId = requireSessionId(ctx);
           return ctx.notesService.listNotes({
             ownerId: sessionId,
             userEmail: ctx.userEmail ?? undefined,
+            ownerMetadata: ctx.ownerMetadata,
             boardId: args.boardId,
             shareToken: args.shareToken ?? undefined,
           });
@@ -135,6 +141,7 @@ export function buildSchema(pubSub: NoteUpdatedPubSub) {
             ...args,
             ownerId: sessionId,
             userEmail: ctx.userEmail ?? undefined,
+            ownerMetadata: ctx.ownerMetadata,
             shareToken: args.shareToken ?? undefined,
           });
         },
@@ -146,11 +153,11 @@ export function buildSchema(pubSub: NoteUpdatedPubSub) {
         },
         updateBoard: async (_parent, args, ctx) => {
           const sessionId = requireSessionId(ctx);
-          return ctx.notesService.updateBoard(sessionId, args.id, args.name);
+          return ctx.notesService.updateBoard(sessionId, args.id, args.name, ctx.ownerMetadata);
         },
         deleteBoard: async (_parent, args, ctx) => {
           const sessionId = requireSessionId(ctx);
-          return ctx.notesService.deleteBoard(sessionId, args.id);
+          return ctx.notesService.deleteBoard(sessionId, args.id, ctx.ownerMetadata);
         },
         setBoardCollaborator: async (_parent, args, ctx) => {
           const sessionId = requireSessionId(ctx);
@@ -158,19 +165,26 @@ export function buildSchema(pubSub: NoteUpdatedPubSub) {
             sessionId,
             args.boardId,
             args.email,
-            args.permission as BoardPermission
+            args.permission as BoardPermission,
+            ctx.ownerMetadata
           );
         },
         removeBoardCollaborator: async (_parent, args, ctx) => {
           const sessionId = requireSessionId(ctx);
-          return ctx.notesService.removeBoardCollaborator(sessionId, args.boardId, args.email);
+          return ctx.notesService.removeBoardCollaborator(
+            sessionId,
+            args.boardId,
+            args.email,
+            ctx.ownerMetadata
+          );
         },
         createShareLink: async (_parent, args, ctx) => {
           const sessionId = requireSessionId(ctx);
           return ctx.notesService.createShareLink(
             sessionId,
             args.boardId,
-            args.permission as BoardPermission
+            args.permission as BoardPermission,
+            ctx.ownerMetadata
           );
         },
         createNote: async (_parent, args, ctx) => {
@@ -179,6 +193,7 @@ export function buildSchema(pubSub: NoteUpdatedPubSub) {
             ...args,
             ownerId: sessionId,
             userEmail: ctx.userEmail ?? undefined,
+            ownerMetadata: ctx.ownerMetadata,
             shareToken: args.shareToken ?? undefined,
           });
           await pubSub.publish("NOTE_UPDATED", note);
@@ -190,6 +205,7 @@ export function buildSchema(pubSub: NoteUpdatedPubSub) {
             ...args,
             ownerId: sessionId,
             userEmail: ctx.userEmail ?? undefined,
+            ownerMetadata: ctx.ownerMetadata,
             shareToken: args.shareToken ?? undefined,
           });
           await pubSub.publish("NOTE_UPDATED", note);
@@ -202,7 +218,8 @@ export function buildSchema(pubSub: NoteUpdatedPubSub) {
             ctx.userEmail ?? undefined,
             args.boardId,
             args.shareToken ?? undefined,
-            args.id
+            args.id,
+            ctx.ownerMetadata
           );
         },
         reindexPendingEmbeddings: async (_parent, args, ctx) => {
@@ -212,7 +229,8 @@ export function buildSchema(pubSub: NoteUpdatedPubSub) {
             ctx.userEmail ?? undefined,
             args.boardId,
             args.shareToken ?? undefined,
-            args.limit ?? 20
+            args.limit ?? 20,
+            ctx.ownerMetadata
           );
 
           for (const note of updatedNotes) {
@@ -229,6 +247,7 @@ export function buildSchema(pubSub: NoteUpdatedPubSub) {
             await ctx.notesService.listNotes({
               ownerId: sessionId,
               userEmail: ctx.userEmail ?? undefined,
+              ownerMetadata: ctx.ownerMetadata,
               boardId: args.boardId,
               shareToken: args.shareToken ?? undefined,
             });

@@ -1,6 +1,6 @@
 export type BoardPermission = "view" | "edit";
 export type SessionMode = "guest" | "user";
-export type AuthMode = "login" | "register";
+export type AuthMode = "login" | "register" | "forgot-password";
 export type NotesFilter = "all" | "indexed" | "pending";
 export type ToastKind = "success" | "error" | "info";
 

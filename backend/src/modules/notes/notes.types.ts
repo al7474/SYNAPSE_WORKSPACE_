@@ -52,6 +52,7 @@ export interface AccessIdentity {
 export interface CreateNoteInput {
   ownerId: string;
   userEmail?: string;
+  ownerMetadata?: OwnerMetadata;
   boardId: string;
   shareToken?: string;
   title: string;
@@ -61,6 +62,7 @@ export interface CreateNoteInput {
 export interface UpdateNoteInput {
   ownerId: string;
   userEmail?: string;
+  ownerMetadata?: OwnerMetadata;
   boardId: string;
   shareToken?: string;
   id: string;
@@ -71,6 +73,7 @@ export interface UpdateNoteInput {
 export interface SemanticSearchInput {
   ownerId: string;
   userEmail?: string;
+  ownerMetadata?: OwnerMetadata;
   boardId: string;
   shareToken?: string;
   query: string;
@@ -81,6 +84,7 @@ export interface SemanticSearchInput {
 export interface ListNotesInput {
   ownerId: string;
   userEmail?: string;
+  ownerMetadata?: OwnerMetadata;
   boardId: string;
   shareToken?: string;
 }

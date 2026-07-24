@@ -29,6 +29,7 @@ type AuthScreenProps = {
   onGuestAccess: () => void;
   onSignIn: (event: FormEvent<HTMLFormElement>) => void | Promise<void>;
   onRegister: (event: FormEvent<HTMLFormElement>) => void | Promise<void>;
+  onForgotPassword: (event: FormEvent<HTMLFormElement>) => void | Promise<void>;
 };
 
 export function AuthScreen({
@@ -48,11 +49,18 @@ export function AuthScreen({
   onGuestAccess,
   onSignIn,
   onRegister,
+  onForgotPassword,
 }: AuthScreenProps) {
   const isLoginMode = authMode === "login";
+  const isForgotPasswordMode = authMode === "forgot-password";
 
   const switchAuthMode = () => {
     onAuthModeChange(isLoginMode ? "register" : "login");
+    onAuthErrorChange("");
+  };
+
+  const openForgotPassword = () => {
+    onAuthModeChange("forgot-password");
     onAuthErrorChange("");
   };
 
@@ -70,7 +78,11 @@ export function AuthScreen({
           </div>
           <div className="pt-1">
             <p className="font-mono text-[11px] font-normal uppercase leading-[16.5px] tracking-[0.55px] text-[#a1a1a1]">
-              {isLoginMode ? "Sign in to continue" : "Create your account"}
+              {isLoginMode
+                ? "Sign in to continue"
+                : isForgotPasswordMode
+                  ? "Recover your account"
+                  : "Create your account"}
             </p>
           </div>
         </header>
@@ -104,7 +116,29 @@ export function AuthScreen({
           <div className="h-px min-w-0 flex-1 bg-white/10" />
         </div>
 
-        {isLoginMode ? (
+        {isForgotPasswordMode ? (
+          <form id="account-auth-form" className="flex w-full flex-col gap-4" onSubmit={onForgotPassword}>
+            <p className="font-mono text-[11px] leading-[16.5px] text-[#a1a1a1]">
+              Enter your account email and we will send recovery instructions if it is registered.
+            </p>
+            <Input
+              id="forgot-password-email"
+              type="email"
+              autoComplete="email"
+              value={authEmail}
+              onChange={(event) => onEmailChange(event.target.value)}
+              placeholder="Email"
+              className={AUTH_INPUT_CLASS_NAME}
+              required
+            />
+            {authError && <p className="break-words font-mono text-[12px] text-red-300">{authError}</p>}
+            <div className="w-full pt-2">
+              <Button type="submit" disabled={isSigningIn} className={AUTH_SUBMIT_CLASS_NAME}>
+                {isSigningIn ? "Sending..." : "Send Recovery Email"}
+              </Button>
+            </div>
+          </form>
+        ) : isLoginMode ? (
           <form id="account-auth-form" className="flex w-full flex-col gap-4" onSubmit={onSignIn}>
             <Input
               id="email"
@@ -132,6 +166,13 @@ export function AuthScreen({
                 {isSigningIn ? "Signing In..." : "Sign In"}
               </Button>
             </div>
+            <button
+              type="button"
+              className="font-mono text-[11px] font-normal uppercase leading-[16.5px] tracking-[0.55px] text-[#a1a1a1]"
+              onClick={openForgotPassword}
+            >
+              Forgot password?
+            </button>
           </form>
         ) : (
           <form id="account-auth-form" className="flex w-full flex-col gap-4" onSubmit={onRegister}>
@@ -190,7 +231,11 @@ export function AuthScreen({
             className="font-mono text-[11px] font-normal uppercase leading-[16.5px] tracking-[0.55px] text-[#a1a1a1]"
             onClick={switchAuthMode}
           >
-            {isLoginMode ? "Need an account? Register" : "Already have an account? Sign In"}
+            {isForgotPasswordMode
+              ? "Back to Sign In"
+              : isLoginMode
+                ? "Need an account? Register"
+                : "Already have an account? Sign In"}
           </button>
         </div>
       </section>

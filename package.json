@@ -21,6 +21,8 @@
     "smoke:semantic": "node --env-file=.env scripts/smoke/semantic-search-smoke.js",
     "smoke:resilience": "node --env-file=.env scripts/smoke/resilience-fallback-smoke.js",
     "smoke:graphql": "node --env-file=.env scripts/smoke/graphql-base-smoke.js",
+    "smoke:auth": "node scripts/smoke/auth-account-smoke.js",
+    "smoke:auth:tokens": "pnpm --filter @synapse/backend exec tsx ../scripts/smoke/auth-token-smoke.ts",
     "smoke:graphql:subscription": "node --env-file=.env scripts/smoke/graphql-subscription-noteupdated-smoke.js",
     "smoke:autosave": "node --env-file=.env scripts/smoke/autosave-realistic-smoke.js",
     "smoke:foundation:local": "node scripts/smoke/run-local-foundation-smokes.js",

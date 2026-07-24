@@ -14,7 +14,7 @@ export async function graphQLRequest<T>(
   query: string,
   variables?: Record<string, unknown>,
   sessionId?: string,
-  userEmail?: string | null
+  _userEmail?: string | null
 ): Promise<T> {
   if (!sessionId) {
     throw new Error("Session not initialized");
@@ -23,11 +23,6 @@ export async function graphQLRequest<T>(
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
-
-  if (userEmail) {
-    headers["x-session-id"] = sessionId;
-    headers["x-user-email"] = userEmail;
-  }
 
   const response = await fetch(GRAPHQL_ENDPOINT, {
     method: "POST",
@@ -53,8 +48,8 @@ export async function graphQLRequest<T>(
 export function buildNoteSubscriptionUrl(
   boardId: string,
   shareToken: string | null,
-  sessionId: string,
-  userEmail: string | null
+  _sessionId?: string,
+  _userEmail?: string | null
 ): string {
   const subscriptionQuery = `
     subscription NoteUpdated($boardId: ID!, $shareToken: String) {
@@ -70,12 +65,8 @@ export function buildNoteSubscriptionUrl(
 
   const queryParam = encodeURIComponent(subscriptionQuery);
   const variablesParam = encodeURIComponent(JSON.stringify({ boardId, shareToken }));
-  const legacyAuthParams =
-    sessionId && userEmail
-      ? `&sessionId=${encodeURIComponent(sessionId)}&userEmail=${encodeURIComponent(userEmail)}`
-      : "";
 
-  return `${GRAPHQL_ENDPOINT}?query=${queryParam}&variables=${variablesParam}${legacyAuthParams}`;
+  return `${GRAPHQL_ENDPOINT}?query=${queryParam}&variables=${variablesParam}`;
 }
 
 export { GRAPHQL_ENDPOINT };

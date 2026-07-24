@@ -73,7 +73,7 @@ export default function HomePage() {
       const deleted = await auth.clearSession();
 
       if (deleted) {
-        onStatusChange("Demo workspace deleted");
+        setStatus("Demo workspace deleted");
         pushToast("success", "Demo workspace deleted");
       }
     } finally {
@@ -145,6 +145,7 @@ export default function HomePage() {
         onGuestAccess={auth.handleGuestAccess}
         onSignIn={auth.handleSignIn}
         onRegister={auth.handleRegister}
+        onForgotPassword={auth.handleForgotPassword}
       />
     );
   }

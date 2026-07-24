@@ -4,10 +4,12 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import {
   clearStoredSession,
   createGuestSession,
-  createUserSessionId,
   deleteGuestSession,
-  persistSession,
+  loginAccount,
+  logoutAccount,
+  registerAccount,
   readStoredSession,
+  requestPasswordReset,
 } from "@/lib/session";
 import type { AuthMode, SessionMode, ToastKind } from "@/types/workspace";
 
@@ -56,9 +58,7 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
   }, []);
 
   const activateSession = useCallback((nextSessionId: string, nextSessionMode: SessionMode, userEmail: string | null = null) => {
-    if (nextSessionMode === "user") {
-      persistSession(nextSessionId, nextSessionMode, userEmail);
-    } else {
+    if (nextSessionMode === "guest") {
       clearStoredSession();
     }
 
@@ -69,6 +69,7 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
 
   const clearSession = useCallback(async (): Promise<boolean> => {
     const demoDeletion = sessionMode === "guest" ? deleteGuestSession() : Promise.resolve();
+    const accountLogout = sessionMode === "user" ? logoutAccount() : Promise.resolve();
 
     clearStoredSession();
     setSessionId("");
@@ -83,6 +84,7 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
 
     try {
       await demoDeletion;
+      await accountLogout;
       return true;
     } catch (error) {
       pushToast("error", error instanceof Error ? error.message : "Unable to delete demo workspace");
@@ -121,17 +123,23 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
         return;
       }
 
-      if (authPassword.trim().length < 6) {
-        setAuthError("Password must be at least 6 characters");
+      if (authPassword.length < 8) {
+        setAuthError("Password must be at least 8 characters");
         return;
       }
 
       setIsSigningIn(true);
 
       try {
-        activateSession(createUserSessionId(email), "user", email);
+        const session = await loginAccount(email, authPassword);
+        activateSession(session.sessionId, session.sessionMode, session.userEmail);
         onStatusChange("Signed in");
         pushToast("success", "Welcome back");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unable to sign in";
+        setAuthError(message);
+        onStatusChange(message);
+        pushToast("error", message);
       } finally {
         setIsSigningIn(false);
       }
@@ -157,8 +165,8 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
         return;
       }
 
-      if (authPassword.trim().length < 6) {
-        setAuthError("Password must be at least 6 characters");
+      if (authPassword.length < 8) {
+        setAuthError("Password must be at least 8 characters");
         return;
       }
 
@@ -170,14 +178,58 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
       setIsSigningIn(true);
 
       try {
-        activateSession(createUserSessionId(email), "user", email);
+        const result = await registerAccount(name, email, authPassword);
+        activateSession(result.session.sessionId, result.session.sessionMode, result.session.userEmail);
         onStatusChange("Account created");
-        pushToast("success", `Welcome ${name}`);
+        pushToast(
+          result.verificationEmailSent ? "success" : "info",
+          result.verificationEmailSent
+            ? `Welcome ${name}. Check your email to verify your account.`
+            : `Welcome ${name}. Email verification is pending.`
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unable to create account";
+        setAuthError(message);
+        onStatusChange(message);
+        pushToast("error", message);
       } finally {
         setIsSigningIn(false);
       }
     },
     [activateSession, authConfirmPassword, authEmail, authName, authPassword, onStatusChange, pushToast]
+  );
+
+  const handleForgotPassword = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      setAuthError("");
+
+      const email = authEmail.trim().toLowerCase();
+
+      if (!email.includes("@")) {
+        setAuthError("Please use a valid email address");
+        return;
+      }
+
+      setIsSigningIn(true);
+
+      try {
+        await requestPasswordReset(email);
+        setAuthMode("login");
+        setAuthPassword("");
+        setAuthError("If an account exists for that email, recovery instructions will be sent.");
+        onStatusChange("Recovery request received");
+        pushToast("info", "Check your email for recovery instructions");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unable to request password recovery";
+        setAuthError(message);
+        onStatusChange(message);
+        pushToast("error", message);
+      } finally {
+        setIsSigningIn(false);
+      }
+    },
+    [authEmail, onStatusChange, pushToast]
   );
 
   return {
@@ -201,6 +253,7 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
     handleGuestAccess,
     handleSignIn,
     handleRegister,
+    handleForgotPassword,
     clearSession,
   };
 }

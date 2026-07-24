@@ -53,6 +53,11 @@ type BoardCollaboratorRow = {
   updated_at: Date;
 };
 
+type OwnerPredicate = {
+  clause: string;
+  values: [string, OwnerKind, string | null, string | null];
+};
+
 export class NotesService {
   constructor(
     private readonly pool: Pool,
@@ -92,6 +97,49 @@ export class NotesService {
     return crypto.randomBytes(18).toString("base64url");
   }
 
+  private buildOwnerPredicate(
+    ownerId: string,
+    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" },
+    ownerIdParameter = 1
+  ): OwnerPredicate {
+    const kindParameter = ownerIdParameter + 1;
+    const userParameter = ownerIdParameter + 2;
+    const guestParameter = ownerIdParameter + 3;
+
+    return {
+      clause: `(
+        ($${kindParameter} = 'user' AND owner_kind = 'user' AND owner_user_id = $${userParameter})
+        OR ($${kindParameter} = 'guest' AND owner_kind = 'guest' AND owner_guest_session_id = $${guestParameter})
+        OR ($${kindParameter} = 'legacy' AND owner_kind = 'legacy' AND owner_id = $${ownerIdParameter})
+      )`,
+      values: [
+        ownerId,
+        ownerMetadata.ownerKind,
+        ownerMetadata.ownerUserId ?? null,
+        ownerMetadata.ownerGuestSessionId ?? null,
+      ],
+    };
+  }
+
+  private isBoardOwner(
+    board: Board,
+    ownerId: string,
+    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+  ): boolean {
+    if (ownerMetadata.ownerKind === "user") {
+      return board.ownerKind === "user" && board.ownerUserId === ownerMetadata.ownerUserId;
+    }
+
+    if (ownerMetadata.ownerKind === "guest") {
+      return (
+        board.ownerKind === "guest" &&
+        board.ownerGuestSessionId === ownerMetadata.ownerGuestSessionId
+      );
+    }
+
+    return board.ownerKind === "legacy" && board.ownerId === ownerId;
+  }
+
   private toBoardCollaborator(row: BoardCollaboratorRow): BoardCollaborator {
     return {
       boardId: String(row.board_id),
@@ -108,7 +156,8 @@ export class NotesService {
     userEmail: string | undefined,
     boardId: string,
     shareToken: string | null | undefined,
-    requireEdit = false
+    requireEdit = false,
+    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
   ): Promise<BoardAccess> {
     const boardResult = await this.pool.query(
       `
@@ -126,7 +175,7 @@ export class NotesService {
 
     const board = this.toBoard(boardResult.rows[0] as BoardRow);
 
-    if (board.ownerId === ownerId) {
+    if (this.isBoardOwner(board, ownerId, ownerMetadata)) {
       return { board, permission: "edit" };
     }
 
@@ -169,15 +218,16 @@ export class NotesService {
     userEmail?: string,
     ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
   ): Promise<Board[]> {
+    const ownerPredicate = this.buildOwnerPredicate(ownerId, ownerMetadata);
     const result = await this.pool.query(
       `
       SELECT id, owner_id, owner_kind, owner_user_id, owner_guest_session_id,
          name, share_token, share_permission, created_at, updated_at
       FROM boards
-      WHERE owner_id = $1
+      WHERE ${ownerPredicate.clause}
       ORDER BY updated_at DESC
       `,
-      [ownerId]
+      ownerPredicate.values
     );
 
     const ownedBoards = result.rows.map((row) => this.toBoard(row as BoardRow));
@@ -223,10 +273,15 @@ export class NotesService {
     return merged;
   }
 
-  async listBoardCollaborators(ownerId: string, boardId: string): Promise<BoardCollaborator[]> {
+  async listBoardCollaborators(
+    ownerId: string,
+    boardId: string,
+    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+  ): Promise<BoardCollaborator[]> {
+    const ownerPredicate = this.buildOwnerPredicate(ownerId, ownerMetadata, 2);
     const ownerCheck = await this.pool.query(
-      `SELECT 1 FROM boards WHERE id = $1 AND owner_id = $2`,
-      [boardId, ownerId]
+      `SELECT 1 FROM boards WHERE id = $1 AND ${ownerPredicate.clause}`,
+      [boardId, ...ownerPredicate.values]
     );
 
     if ((ownerCheck.rowCount ?? 0) === 0) {
@@ -250,11 +305,13 @@ export class NotesService {
     ownerId: string,
     boardId: string,
     email: string,
-    permission: BoardPermission
+    permission: BoardPermission,
+    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
   ): Promise<BoardCollaborator> {
+    const ownerPredicate = this.buildOwnerPredicate(ownerId, ownerMetadata, 2);
     const ownerCheck = await this.pool.query(
-      `SELECT 1 FROM boards WHERE id = $1 AND owner_id = $2`,
-      [boardId, ownerId]
+      `SELECT 1 FROM boards WHERE id = $1 AND ${ownerPredicate.clause}`,
+      [boardId, ...ownerPredicate.values]
     );
 
     if ((ownerCheck.rowCount ?? 0) === 0) {
@@ -283,10 +340,16 @@ export class NotesService {
     return this.toBoardCollaborator(result.rows[0] as BoardCollaboratorRow);
   }
 
-  async removeBoardCollaborator(ownerId: string, boardId: string, email: string): Promise<boolean> {
+  async removeBoardCollaborator(
+    ownerId: string,
+    boardId: string,
+    email: string,
+    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+  ): Promise<boolean> {
+    const ownerPredicate = this.buildOwnerPredicate(ownerId, ownerMetadata, 2);
     const ownerCheck = await this.pool.query(
-      `SELECT 1 FROM boards WHERE id = $1 AND owner_id = $2`,
-      [boardId, ownerId]
+      `SELECT 1 FROM boards WHERE id = $1 AND ${ownerPredicate.clause}`,
+      [boardId, ...ownerPredicate.values]
     );
 
     if ((ownerCheck.rowCount ?? 0) === 0) {
@@ -337,23 +400,29 @@ export class NotesService {
     return this.toBoard(result.rows[0] as BoardRow);
   }
 
-  async updateBoard(ownerId: string, boardId: string, name: string): Promise<Board> {
+  async updateBoard(
+    ownerId: string,
+    boardId: string,
+    name: string,
+    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+  ): Promise<Board> {
     const trimmed = name.trim();
 
     if (!trimmed) {
       throw new Error("Board name is required");
     }
 
+    const ownerPredicate = this.buildOwnerPredicate(ownerId, ownerMetadata, 3);
     const result = await this.pool.query(
       `
       UPDATE boards
       SET name = $1,
           updated_at = NOW()
-      WHERE id = $2 AND owner_id = $3
+      WHERE id = $2 AND ${ownerPredicate.clause}
       RETURNING id, owner_id, owner_kind, owner_user_id, owner_guest_session_id,
             name, share_token, share_permission, created_at, updated_at
       `,
-      [trimmed, boardId, ownerId]
+      [trimmed, boardId, ...ownerPredicate.values]
     );
 
     if ((result.rowCount ?? 0) === 0) {
@@ -363,13 +432,27 @@ export class NotesService {
     return this.toBoard(result.rows[0] as BoardRow);
   }
 
-  async deleteBoard(ownerId: string, boardId: string): Promise<boolean> {
-    const result = await this.pool.query(`DELETE FROM boards WHERE id = $1 AND owner_id = $2`, [boardId, ownerId]);
+  async deleteBoard(
+    ownerId: string,
+    boardId: string,
+    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+  ): Promise<boolean> {
+    const ownerPredicate = this.buildOwnerPredicate(ownerId, ownerMetadata, 2);
+    const result = await this.pool.query(
+      `DELETE FROM boards WHERE id = $1 AND ${ownerPredicate.clause}`,
+      [boardId, ...ownerPredicate.values]
+    );
     return (result.rowCount ?? 0) > 0;
   }
 
-  async createShareLink(ownerId: string, boardId: string, permission: BoardPermission): Promise<string> {
+  async createShareLink(
+    ownerId: string,
+    boardId: string,
+    permission: BoardPermission,
+    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+  ): Promise<string> {
     const token = this.generateShareToken();
+    const ownerPredicate = this.buildOwnerPredicate(ownerId, ownerMetadata, 3);
 
     const result = await this.pool.query(
       `
@@ -377,10 +460,10 @@ export class NotesService {
       SET share_token = $1,
           share_permission = $2,
           updated_at = NOW()
-      WHERE id = $3 AND owner_id = $4
+        WHERE id = $3 AND ${ownerPredicate.clause}
       RETURNING share_token
       `,
-      [token, permission, boardId, ownerId]
+        [token, permission, boardId, ...ownerPredicate.values]
     );
 
     if ((result.rowCount ?? 0) === 0) {
@@ -390,7 +473,12 @@ export class NotesService {
     return result.rows[0].share_token as string;
   }
 
-  async accessSharedBoard(ownerId: string, userEmail: string | undefined, token: string): Promise<SharedBoardAccess> {
+  async accessSharedBoard(
+    ownerId: string,
+    userEmail: string | undefined,
+    token: string,
+    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+  ): Promise<SharedBoardAccess> {
     const result = await this.pool.query(
       `
       SELECT id, owner_id, owner_kind, owner_user_id, owner_guest_session_id,
@@ -407,7 +495,7 @@ export class NotesService {
 
     const board = this.toBoard(result.rows[0] as BoardRow);
 
-    if (board.ownerId === ownerId) {
+    if (this.isBoardOwner(board, ownerId, ownerMetadata)) {
       return {
         board,
         permission: "edit",
@@ -444,7 +532,8 @@ export class NotesService {
       input.userEmail,
       input.boardId,
       input.shareToken ?? null,
-      true
+      true,
+      input.ownerMetadata
     );
     const embedding = await this.buildEmbedding(input.content);
 
@@ -486,7 +575,8 @@ export class NotesService {
       input.userEmail,
       input.boardId,
       input.shareToken ?? null,
-      true
+      true,
+      input.ownerMetadata
     );
     const current = await this.pool.query(
       `SELECT id, title, content FROM notes WHERE id = $1 AND board_id = $2`,
@@ -545,7 +635,8 @@ export class NotesService {
       input.userEmail,
       input.boardId,
       input.shareToken ?? null,
-      false
+      false,
+      input.ownerMetadata
     );
 
     const result = await this.pool.query(
@@ -567,7 +658,8 @@ export class NotesService {
       input.userEmail,
       input.boardId,
       input.shareToken ?? null,
-      false
+      false,
+      input.ownerMetadata
     );
 
     const limit = Math.max(1, Math.min(input.limit ?? 5, 20));
@@ -605,9 +697,17 @@ export class NotesService {
     userEmail: string | undefined,
     boardId: string,
     shareToken: string | undefined,
-    id: string
+    id: string,
+    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
   ): Promise<boolean> {
-    await this.requireBoardAccess(ownerId, userEmail, boardId, shareToken ?? null, true);
+    await this.requireBoardAccess(
+      ownerId,
+      userEmail,
+      boardId,
+      shareToken ?? null,
+      true,
+      ownerMetadata
+    );
     const result = await this.pool.query(`DELETE FROM notes WHERE id = $1 AND board_id = $2`, [id, boardId]);
     return (result.rowCount ?? 0) > 0;
   }
@@ -617,9 +717,17 @@ export class NotesService {
     userEmail: string | undefined,
     boardId: string,
     shareToken: string | undefined,
-    limit = 20
+    limit = 20,
+    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
   ): Promise<Note[]> {
-    await this.requireBoardAccess(ownerId, userEmail, boardId, shareToken ?? null, true);
+    await this.requireBoardAccess(
+      ownerId,
+      userEmail,
+      boardId,
+      shareToken ?? null,
+      true,
+      ownerMetadata
+    );
 
     const safeLimit = Math.max(1, Math.min(limit, 100));
 
