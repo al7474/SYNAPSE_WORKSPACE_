@@ -83,6 +83,12 @@ export class AuthEmailService {
       throw new Error("Resend email delivery requires RESEND_API_KEY and AUTH_EMAIL_FROM");
     }
 
+    if (this.options.from.includes("tu-dominio.com")) {
+      throw new Error(
+        "AUTH_EMAIL_FROM still uses the example domain; configure a sender verified in Resend"
+      );
+    }
+
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -99,7 +105,9 @@ export class AuthEmailService {
     });
 
     if (!response.ok) {
-      throw new Error(`Email delivery failed with status ${response.status}`);
+      const responseText = (await response.text()).trim();
+      const detail = responseText ? `: ${responseText.slice(0, 300)}` : "";
+      throw new Error(`Email delivery failed with status ${response.status}${detail}`);
     }
   }
 

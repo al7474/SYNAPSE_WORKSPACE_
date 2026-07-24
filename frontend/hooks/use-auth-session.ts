@@ -185,7 +185,7 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
           result.verificationEmailSent ? "success" : "info",
           result.verificationEmailSent
             ? `Welcome ${name}. Check your email to verify your account.`
-            : `Welcome ${name}. Email verification is pending.`
+            : `Welcome ${name}. The verification email could not be sent; check the backend email configuration.`
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unable to create account";
