@@ -13,6 +13,7 @@ import type { AuthMode, Board } from "@/types/workspace";
 export default function HomePage() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isNoteEditorOpen, setIsNoteEditorOpen] = useState(false);
+  const [isDeletingDemoWorkspace, setIsDeletingDemoWorkspace] = useState(false);
   const [accessBoardId, setAccessBoardId] = useState<string | null>(null);
   const [, setStatus] = useState("Initializing secure workspace environment...");
   const { toasts, pushToast } = useToasts();
@@ -45,7 +46,39 @@ export default function HomePage() {
     setAccessBoardId(null);
     boards.resetBoards();
     notes.resetNotes();
-    auth.clearSession();
+    void auth.clearSession();
+  };
+
+  const handleDeleteDemoWorkspace = async () => {
+    if (auth.sessionMode !== "guest") {
+      return;
+    }
+
+    const shouldDelete = window.confirm(
+      "Delete this demo workspace? All boards and notes in this temporary session will be permanently removed."
+    );
+
+    if (!shouldDelete) {
+      return;
+    }
+
+    setIsDeletingDemoWorkspace(true);
+    setIsSidebarOpen(false);
+    setIsNoteEditorOpen(false);
+    setAccessBoardId(null);
+    boards.resetBoards();
+    notes.resetNotes();
+
+    try {
+      const deleted = await auth.clearSession();
+
+      if (deleted) {
+        onStatusChange("Demo workspace deleted");
+        pushToast("success", "Demo workspace deleted");
+      }
+    } finally {
+      setIsDeletingDemoWorkspace(false);
+    }
   };
 
   const handleSelectBoard = (board: Board) => {
@@ -132,6 +165,7 @@ export default function HomePage() {
         isSidebarOpen,
         isCreatingBoard: boards.isCreatingBoard,
         deletingBoardId: boards.deletingBoardId,
+        isDeletingDemoWorkspace,
         onClose: () => setIsSidebarOpen(false),
         onResetSearch: () => notes.setSearchText(""),
         onSelectBoard: handleSelectBoard,
@@ -140,6 +174,7 @@ export default function HomePage() {
         onCopyShareLink: boards.handleCopyExistingShareLink,
         onShowBoardAccess: handleShowBoardAccess,
         onCreateBoard: boards.handleCreateBoard,
+        onDeleteDemoWorkspace: handleDeleteDemoWorkspace,
       }}
       content={{
         searchText: notes.searchText,

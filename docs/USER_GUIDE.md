@@ -6,9 +6,9 @@ Synapse Workspace is a note-taking application designed especially for developer
 
 ### 1. Zero-Friction Guest Access (Try Without an Account)
 Forget long registration forms or having to verify your email just to test the app. 
-* **One-Click Demo:** Click the **"Try Demo / Guest Access"** button to instantly enter the workspace.
-* **Full Cloud Experience:** The system silently provisions a temporary "Guest" account in our cloud database. This grants you immediate, unrestricted access to the database-driven auto-saving, public sharing, and AI search features without sharing any personal data.
-* **Seamless Upgrade:** If you like the platform, you can upgrade your temporary session to a permanent account at any time to secure your notes forever.
+* **One-Click Demo:** Click **"Enter Demo Mode"** to instantly enter an isolated workspace.
+* **Temporary Session:** The backend creates a temporary guest session with an expiring secure cookie. No password or personal data is required.
+* **Full Control:** Use **"Delete demo workspace"** to permanently remove the boards and notes created during the demo.
 
 ### 2. A Super Smooth & Modern Editor
 You will write your notes in an editor heavily inspired by Notion. You can organize your content by blocks, create paragraphs, lists, headers, and—most importantly—**code blocks with syntax highlighting** so your programming notes and snippets are incredibly clean and easy to read.

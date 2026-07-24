@@ -22,16 +22,17 @@ export async function graphQLRequest<T>(
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "x-session-id": sessionId,
   };
 
   if (userEmail) {
+    headers["x-session-id"] = sessionId;
     headers["x-user-email"] = userEmail;
   }
 
   const response = await fetch(GRAPHQL_ENDPOINT, {
     method: "POST",
     headers,
+    credentials: "include",
     body: JSON.stringify({ query, variables }),
   });
 
@@ -69,10 +70,12 @@ export function buildNoteSubscriptionUrl(
 
   const queryParam = encodeURIComponent(subscriptionQuery);
   const variablesParam = encodeURIComponent(JSON.stringify({ boardId, shareToken }));
-  const sessionParam = encodeURIComponent(sessionId);
-  const userEmailParam = userEmail ? `&userEmail=${encodeURIComponent(userEmail)}` : "";
+  const legacyAuthParams =
+    sessionId && userEmail
+      ? `&sessionId=${encodeURIComponent(sessionId)}&userEmail=${encodeURIComponent(userEmail)}`
+      : "";
 
-  return `${GRAPHQL_ENDPOINT}?query=${queryParam}&variables=${variablesParam}&sessionId=${sessionParam}${userEmailParam}`;
+  return `${GRAPHQL_ENDPOINT}?query=${queryParam}&variables=${variablesParam}${legacyAuthParams}`;
 }
 
 export { GRAPHQL_ENDPOINT };

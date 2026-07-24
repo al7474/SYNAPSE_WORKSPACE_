@@ -1,18 +1,22 @@
 import type { SessionMode, StoredSession } from "@/types/workspace";
 
+const GRAPHQL_ENDPOINT =
+  process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT || "http://localhost:4000/graphql";
 const SESSION_ID_KEY = "synapse_session_id";
 const SESSION_MODE_KEY = "synapse_session_mode";
 const USER_EMAIL_KEY = "synapse_user_email";
 const LEGACY_GUEST_SESSION_KEY = "synapse_guest_session_id";
 
-function isSessionMode(value: string | null): value is SessionMode {
-  return value === "guest" || value === "user";
-}
+type GuestSessionResponse = {
+  sessionId: string;
+  sessionMode: "guest";
+  userEmail: null;
+  expiresAt: string;
+};
 
-export function createGuestSessionId(): string {
-  return typeof crypto.randomUUID === "function"
-    ? `guest_${crypto.randomUUID()}`
-    : `guest_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+function getGuestSessionEndpoint(): string {
+  const baseUrl = typeof window === "undefined" ? "http://localhost:3000" : window.location.origin;
+  return `${new URL(GRAPHQL_ENDPOINT, baseUrl).origin}/auth/guest-session`;
 }
 
 export function createUserSessionId(email: string): string {
@@ -20,34 +24,97 @@ export function createUserSessionId(email: string): string {
   return `user_${normalizedEmail}`;
 }
 
-export function readStoredSession(): StoredSession | null {
+function readLegacyUserSession(): StoredSession | null {
   const storedSessionId = window.localStorage.getItem(SESSION_ID_KEY)?.trim() || "";
   const storedSessionMode = window.localStorage.getItem(SESSION_MODE_KEY);
   const storedUserEmail = window.localStorage.getItem(USER_EMAIL_KEY)?.trim().toLowerCase() || "";
-  const legacyGuestId = window.localStorage.getItem(LEGACY_GUEST_SESSION_KEY)?.trim() || "";
 
-  if (storedSessionId && isSessionMode(storedSessionMode)) {
+  if (storedSessionId && storedSessionMode === "user" && storedUserEmail) {
     return {
       sessionId: storedSessionId,
-      sessionMode: storedSessionMode,
-      userEmail: storedSessionMode === "user" && storedUserEmail ? storedUserEmail : null,
-    };
-  }
-
-  if (legacyGuestId) {
-    persistSession(legacyGuestId, "guest");
-    window.localStorage.removeItem(LEGACY_GUEST_SESSION_KEY);
-    return {
-      sessionId: legacyGuestId,
-      sessionMode: "guest",
-      userEmail: null,
+      sessionMode: "user",
+      userEmail: storedUserEmail,
     };
   }
 
   return null;
 }
 
+export async function readStoredSession(): Promise<StoredSession | null> {
+  try {
+    const response = await fetch(getGuestSessionEndpoint(), {
+      method: "GET",
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    });
+
+    if (response.ok) {
+      const payload = (await response.json()) as GuestSessionResponse;
+
+      return {
+        sessionId: payload.sessionId,
+        sessionMode: payload.sessionMode,
+        userEmail: payload.userEmail,
+      };
+    }
+
+    if (response.status !== 401) {
+      throw new Error("Unable to restore demo session");
+    }
+  } catch {
+    const legacySession = readLegacyUserSession();
+
+    if (legacySession) {
+      return legacySession;
+    }
+  }
+
+  clearStoredSession();
+  return null;
+}
+
+export async function createGuestSession(): Promise<StoredSession> {
+  const response = await fetch(getGuestSessionEndpoint(), {
+    method: "POST",
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+
+  if (!response.ok) {
+    throw new Error("Unable to start demo mode");
+  }
+
+  const payload = (await response.json()) as GuestSessionResponse;
+
+  clearStoredSession();
+
+  return {
+    sessionId: payload.sessionId,
+    sessionMode: payload.sessionMode,
+    userEmail: payload.userEmail,
+  };
+}
+
+export async function deleteGuestSession(): Promise<void> {
+  const response = await fetch(getGuestSessionEndpoint(), {
+    method: "DELETE",
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+
+  if (!response.ok) {
+    throw new Error("Unable to delete demo workspace");
+  }
+
+  clearStoredSession();
+}
+
 export function persistSession(sessionId: string, sessionMode: SessionMode, userEmail?: string | null): void {
+  if (sessionMode === "guest") {
+    clearStoredSession();
+    return;
+  }
+
   window.localStorage.setItem(SESSION_ID_KEY, sessionId);
   window.localStorage.setItem(SESSION_MODE_KEY, sessionMode);
 

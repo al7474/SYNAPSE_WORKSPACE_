@@ -112,7 +112,8 @@ export function useNotes({
     }
 
     const eventSource = new EventSource(
-      buildNoteSubscriptionUrl(activeBoardId, activeShareToken, sessionId, currentUserEmail)
+      buildNoteSubscriptionUrl(activeBoardId, activeShareToken, sessionId, currentUserEmail),
+      { withCredentials: true }
     );
 
     eventSource.onmessage = (event) => {

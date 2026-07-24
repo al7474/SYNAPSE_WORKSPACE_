@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Copy, Link2, MoreHorizontal, Plus, Trash2, Users } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { SharePermissionDialog } from "@/components/workspace/share-permission-dialog";
 import type { Board, BoardPermission, SessionMode } from "@/types/workspace";
 
@@ -14,6 +15,7 @@ type WorkspaceSidebarProps = {
   isSidebarOpen: boolean;
   isCreatingBoard: boolean;
   deletingBoardId: string | null;
+  isDeletingDemoWorkspace: boolean;
   onClose: () => void;
   onResetSearch: () => void;
   onSelectBoard: (board: Board) => void;
@@ -22,6 +24,7 @@ type WorkspaceSidebarProps = {
   onCopyShareLink: (board: Board) => void | Promise<void>;
   onShowBoardAccess: (board: Board) => void;
   onCreateBoard: () => void | Promise<void>;
+  onDeleteDemoWorkspace: () => void | Promise<void>;
 };
 
 export function WorkspaceSidebar({
@@ -33,6 +36,7 @@ export function WorkspaceSidebar({
   isSidebarOpen,
   isCreatingBoard,
   deletingBoardId,
+  isDeletingDemoWorkspace,
   onClose,
   onResetSearch,
   onSelectBoard,
@@ -41,6 +45,7 @@ export function WorkspaceSidebar({
   onCopyShareLink,
   onShowBoardAccess,
   onCreateBoard,
+  onDeleteDemoWorkspace,
 }: WorkspaceSidebarProps) {
   const [openBoardMenuId, setOpenBoardMenuId] = useState<string | null>(null);
   const [shareTargetBoard, setShareTargetBoard] = useState<Board | null>(null);
@@ -211,10 +216,36 @@ export function WorkspaceSidebar({
             <span className="grid h-8 w-8 shrink-0 place-items-center border border-[rgba(255,255,255,0.1)] bg-[#262626] text-[10px] tracking-[0.55px] text-[#fafafa]">
               {sessionMode === "user" ? "88" : "G"}
             </span>
-            <p className="truncate text-[11px] uppercase tracking-[0.55px] text-[#a1a1a1]">
-              {sessionMode === "user" ? currentUserEmail?.split("@")[0] || "User" : "Guest"}
-            </p>
+            <div className="min-w-0">
+              <p className="truncate text-[11px] uppercase tracking-[0.55px] text-[#a1a1a1]">
+                {sessionMode === "user" ? currentUserEmail?.split("@")[0] || "User" : "Guest"}
+              </p>
+              <Badge
+                variant={sessionMode === "guest" ? "warning" : "outline"}
+                className="mt-1 rounded-none px-1.5 py-0 font-mono text-[9px] uppercase tracking-[0.45px]"
+              >
+                {sessionMode === "guest" ? "Demo mode" : "Account mode"}
+              </Badge>
+            </div>
           </div>
+          {sessionMode === "guest" && (
+            <>
+              <p className="pt-2 font-mono text-[10px] uppercase tracking-[0.45px] text-[#737373]">
+                Temporary workspace
+              </p>
+              <button
+                type="button"
+                className="mt-3 flex w-full items-center justify-center gap-2 border border-[#f52f39]/30 px-2 py-2 text-[10px] uppercase tracking-[0.45px] text-[#fca5a5] hover:border-[#f52f39] hover:text-[#fecaca]"
+                onClick={() => void onDeleteDemoWorkspace()}
+                disabled={isDeletingDemoWorkspace}
+                aria-label="Delete demo workspace"
+                title="Delete demo workspace"
+              >
+                <Trash2 size={13} aria-hidden="true" />
+                <span>{isDeletingDemoWorkspace ? "Deleting demo..." : "Delete demo workspace"}</span>
+              </button>
+            </>
+          )}
         </div>
       </aside>
 

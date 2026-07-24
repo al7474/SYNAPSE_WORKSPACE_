@@ -40,10 +40,13 @@ Keep GraphQL and browser persistence inside hooks or `lib/` modules. Components 
 
 ## Ownership and route protection
 
-- Every GraphQL request must include `x-session-id`.
-- Backend resolvers scope all note operations by `owner_id = sessionId`.
+- Demo sessions are created by the backend and identified by an opaque `HttpOnly` cookie.
+- The backend resolves the demo owner from `guest_sessions` before GraphQL operations run.
+- Backend resolvers scope all note operations by the resolved `owner_id`.
+- Legacy Account mode still sends `x-session-id` and `x-user-email` until the real account authentication phase is implemented.
 - `noteUpdated` subscription events are filtered by owner before sending.
-- Frontend persists a guest session id in local storage and sends it in API and subscription calls.
+- Guest GraphQL requests and subscriptions use `credentials: include`; no guest token is stored in local storage or query strings.
+- Guest sessions expire after `GUEST_SESSION_TTL_MS` and can be revoked from the workspace, which deletes their boards and notes.
 
 ## Security guardrails
 

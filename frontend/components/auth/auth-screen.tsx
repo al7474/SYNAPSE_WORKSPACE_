@@ -75,17 +75,32 @@ export function AuthScreen({
           </div>
         </header>
 
+        <div className="border border-emerald-400/20 bg-emerald-400/[0.04] px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <span className="font-mono text-[11px] font-normal uppercase tracking-[0.55px] text-emerald-300">
+              Demo mode
+            </span>
+            <span className="font-mono text-[10px] font-normal uppercase tracking-[0.45px] text-[#a1a1a1]">
+              No account required
+            </span>
+          </div>
+          <p className="pt-1 font-mono text-[11px] font-normal leading-[16.5px] text-[#a1a1a1]">
+            Temporary workspace for exploring Synapse.
+          </p>
+        </div>
+
         <Button
           className="h-[52px] min-h-0 w-full rounded-none bg-[#e5e5e5] px-4 pb-4 pt-5 font-mono text-[12px] font-normal uppercase tracking-[0.6px] text-[#171717] shadow-none hover:bg-[#e5e5e5]"
           onClick={onGuestAccess}
+          disabled={isSigningIn}
         >
           <img src={GUEST_ACCESS_ICON_URL} alt="" aria-hidden="true" className="h-4 w-4 shrink-0" />
-          <span className="text-center leading-[15px]">Launch Instant Demo / Guest Access</span>
+          <span className="text-center leading-[15px]">{isSigningIn ? "Starting Demo..." : "Enter Demo Mode"}</span>
         </Button>
 
         <div className="flex h-[17px] w-full items-center gap-3 font-mono text-[11px] font-normal leading-[16.5px] text-[#a1a1a1]">
           <div className="h-px min-w-0 flex-1 bg-white/10" />
-          <span className="shrink-0">or continue with account</span>
+          <span className="shrink-0 uppercase tracking-[0.55px]">Account mode</span>
           <div className="h-px min-w-0 flex-1 bg-white/10" />
         </div>
 

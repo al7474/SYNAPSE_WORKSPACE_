@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import {
   clearStoredSession,
-  createGuestSessionId,
+  createGuestSession,
   createUserSessionId,
+  deleteGuestSession,
   persistSession,
   readStoredSession,
 } from "@/lib/session";
@@ -29,25 +30,46 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
   const [isHydratingSession, setIsHydratingSession] = useState(true);
 
   useEffect(() => {
-    const storedSession = readStoredSession();
+    let isCancelled = false;
 
-    if (storedSession) {
-      setSessionId(storedSession.sessionId);
-      setSessionMode(storedSession.sessionMode);
-      setCurrentUserEmail(storedSession.userEmail);
-    }
+    const hydrateSession = async () => {
+      try {
+        const storedSession = await readStoredSession();
 
-    setIsHydratingSession(false);
+        if (!isCancelled && storedSession) {
+          setSessionId(storedSession.sessionId);
+          setSessionMode(storedSession.sessionMode);
+          setCurrentUserEmail(storedSession.userEmail);
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsHydratingSession(false);
+        }
+      }
+    };
+
+    void hydrateSession();
+
+    return () => {
+      isCancelled = true;
+    };
   }, []);
 
   const activateSession = useCallback((nextSessionId: string, nextSessionMode: SessionMode, userEmail: string | null = null) => {
-    persistSession(nextSessionId, nextSessionMode, userEmail);
+    if (nextSessionMode === "user") {
+      persistSession(nextSessionId, nextSessionMode, userEmail);
+    } else {
+      clearStoredSession();
+    }
+
     setSessionId(nextSessionId);
     setSessionMode(nextSessionMode);
     setCurrentUserEmail(userEmail);
   }, []);
 
-  const clearSession = useCallback(() => {
+  const clearSession = useCallback(async (): Promise<boolean> => {
+    const demoDeletion = sessionMode === "guest" ? deleteGuestSession() : Promise.resolve();
+
     clearStoredSession();
     setSessionId("");
     setSessionMode(null);
@@ -58,12 +80,33 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
     setAuthPassword("");
     setAuthConfirmPassword("");
     setAuthError("");
-  }, []);
 
-  const handleGuestAccess = useCallback(() => {
-    activateSession(createGuestSessionId(), "guest");
-    onStatusChange("Guest session active");
-    pushToast("info", "You are in guest mode");
+    try {
+      await demoDeletion;
+      return true;
+    } catch (error) {
+      pushToast("error", error instanceof Error ? error.message : "Unable to delete demo workspace");
+      return false;
+    }
+  }, [pushToast, sessionMode]);
+
+  const handleGuestAccess = useCallback(async () => {
+    setAuthError("");
+    setIsSigningIn(true);
+
+    try {
+      const guestSession = await createGuestSession();
+      activateSession(guestSession.sessionId, "guest");
+      onStatusChange("Demo session active");
+      pushToast("info", "You are in demo mode");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to start demo mode";
+      setAuthError(message);
+      onStatusChange(message);
+      pushToast("error", message);
+    } finally {
+      setIsSigningIn(false);
+    }
   }, [activateSession, onStatusChange, pushToast]);
 
   const handleSignIn = useCallback(
