@@ -337,9 +337,9 @@ export function useNotes({
     };
   }, [minSimilarity, runSemanticSearch, searchText]);
 
-  const handleCreateNote = useCallback(async () => {
+  const handleCreateNote = useCallback(async (): Promise<boolean> => {
     if (!activeBoardId || !canEditBoard) {
-      return;
+      return false;
     }
 
     setIsCreating(true);
@@ -375,9 +375,11 @@ export function useNotes({
       await loadNotes();
       onStatusChange("Note created");
       pushToast("success", "Note created");
+      return true;
     } catch (error) {
       onStatusChange(error instanceof Error ? error.message : "Create failed");
       pushToast("error", "Unable to create note");
+      return false;
     } finally {
       setIsCreating(false);
     }

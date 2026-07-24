@@ -12,6 +12,7 @@ import type { AuthMode, Board } from "@/types/workspace";
 
 export default function HomePage() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isNoteEditorOpen, setIsNoteEditorOpen] = useState(false);
   const [accessBoardId, setAccessBoardId] = useState<string | null>(null);
   const [, setStatus] = useState("Initializing secure workspace environment...");
   const { toasts, pushToast } = useToasts();
@@ -40,6 +41,7 @@ export default function HomePage() {
 
   const handleLogout = () => {
     setIsSidebarOpen(false);
+    setIsNoteEditorOpen(false);
     setAccessBoardId(null);
     boards.resetBoards();
     notes.resetNotes();
@@ -47,11 +49,13 @@ export default function HomePage() {
   };
 
   const handleSelectBoard = (board: Board) => {
+    setIsNoteEditorOpen(false);
     setAccessBoardId(null);
     boards.selectBoard(board);
   };
 
   const handleShowBoardAccess = (board: Board) => {
+    setIsNoteEditorOpen(false);
     setAccessBoardId(board.id);
     boards.selectBoard(board);
     setIsSidebarOpen(false);
@@ -62,7 +66,21 @@ export default function HomePage() {
     await boards.handleDeleteBoard(board);
 
     if (wasActiveBoard) {
+      setIsNoteEditorOpen(false);
       notes.resetNotes();
+    }
+  };
+
+  const handleSelectNote = (noteId: string) => {
+    notes.setSelectedId(noteId);
+    setIsNoteEditorOpen(true);
+  };
+
+  const handleCreateNote = async () => {
+    const created = await notes.handleCreateNote();
+
+    if (created) {
+      setIsNoteEditorOpen(true);
     }
   };
 
@@ -137,6 +155,7 @@ export default function HomePage() {
         isBoardsLoading: boards.isBoardsLoading,
         canEditBoard: boards.canEditBoard,
         isCreating: notes.isCreating,
+        isNoteEditorOpen,
         selectedId: notes.selectedId,
         selectedNote: notes.selectedNote,
         draftTitle: notes.draftTitle,
@@ -148,8 +167,9 @@ export default function HomePage() {
         onCloseBoardAccess: () => setAccessBoardId(null),
         onUpdateCollaboratorPermission: boards.handleUpdateCollaboratorPermission,
         onRemoveCollaborator: boards.handleRemoveCollaborator,
-        onSelectNote: notes.setSelectedId,
-        onCreateNote: notes.handleCreateNote,
+        onSelectNote: handleSelectNote,
+        onCreateNote: handleCreateNote,
+        onCloseNote: () => setIsNoteEditorOpen(false),
         onDraftTitleChange: notes.setDraftTitle,
         onDraftContentChange: notes.setDraftContent,
         onRequestDelete: () => notes.setShowDeleteConfirm(true),
