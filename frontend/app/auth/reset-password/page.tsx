@@ -14,9 +14,8 @@ const SUBMIT_CLASS_NAME =
 function readAndClearActionToken(): string {
   const url = new URL(window.location.href);
   const fragmentParameters = new URLSearchParams(url.hash.slice(1));
-  const queryToken = url.searchParams.get("token")?.trim() || "";
   const fragmentToken = fragmentParameters.get("token")?.trim() || "";
-  const token = fragmentToken || queryToken;
+  const token = fragmentToken;
 
   if (url.searchParams.has("token")) {
     url.searchParams.delete("token");

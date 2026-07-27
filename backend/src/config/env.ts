@@ -55,6 +55,16 @@ function readPositiveInteger(name: string, fallback: number): number {
   return parsed;
 }
 
+function readAuthRateLimitStore(): "memory" | "upstash" {
+  const value = process.env.AUTH_RATE_LIMIT_STORE || (isProduction ? "upstash" : "memory");
+
+  if (value === "memory" || value === "upstash") {
+    return value;
+  }
+
+  throw new Error("AUTH_RATE_LIMIT_STORE must be either memory or upstash");
+}
+
 function assertHttpsUrl(name: string, value: string): void {
   let parsed: URL;
 
@@ -74,6 +84,10 @@ const isProduction = process.env.NODE_ENV === "production";
 const frontendOrigin = process.env.FRONTEND_ORIGIN || "http://localhost:3000";
 const authPublicUrl = process.env.AUTH_PUBLIC_URL || `http://localhost:${port}`;
 const authFrontendUrl = process.env.AUTH_FRONTEND_URL || frontendOrigin;
+const authRateLimitEnabled = readBoolean("AUTH_RATE_LIMIT_ENABLED", true);
+const authRateLimitStore = readAuthRateLimitStore();
+const upstashRedisRestUrl = process.env.UPSTASH_REDIS_REST_URL || "";
+const upstashRedisRestToken = process.env.UPSTASH_REDIS_REST_TOKEN || "";
 
 function readAuthEmailProvider(): AuthEmailProvider {
   const value = process.env.AUTH_EMAIL_PROVIDER || (isProduction ? "resend" : "console");
@@ -94,6 +108,22 @@ if (isProduction) {
 
   if (authEmailProvider === "console") {
     throw new Error("AUTH_EMAIL_PROVIDER=console is not allowed in production");
+  }
+
+  if (authRateLimitEnabled && authRateLimitStore !== "upstash") {
+    throw new Error("AUTH_RATE_LIMIT_STORE=upstash is required when auth rate limiting is enabled in production");
+  }
+}
+
+if (authRateLimitStore === "upstash") {
+  if (!upstashRedisRestUrl || !upstashRedisRestToken) {
+    throw new Error(
+      "UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are required when AUTH_RATE_LIMIT_STORE=upstash"
+    );
+  }
+
+  if (isProduction) {
+    assertHttpsUrl("UPSTASH_REDIS_REST_URL", upstashRedisRestUrl);
   }
 }
 
@@ -121,8 +151,11 @@ export const env = {
   authEmailProvider,
   authEmailFrom: process.env.AUTH_EMAIL_FROM || "",
   resendApiKey: process.env.RESEND_API_KEY || "",
-  authRateLimitEnabled: readBoolean("AUTH_RATE_LIMIT_ENABLED", true),
+  authRateLimitEnabled,
+  authRateLimitStore,
   authRateLimitMaxKeys: readPositiveInteger("AUTH_RATE_LIMIT_MAX_KEYS", 10_000),
+  upstashRedisRestUrl,
+  upstashRedisRestToken,
   authBodyMaxBytes: readPositiveInteger("AUTH_BODY_MAX_BYTES", 16_384),
   authCsrfEnabled: readBoolean("AUTH_CSRF_ENABLED", true),
   trustProxy: readBoolean("TRUST_PROXY", false),

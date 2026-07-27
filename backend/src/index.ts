@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createPubSub, createYoga } from "graphql-yoga";
+import { Redis } from "@upstash/redis";
 import { Pool } from "pg";
 import { env } from "./config/env.js";
 import { buildSchema } from "./graphql/schema.js";
@@ -21,6 +22,9 @@ import { AuthService } from "./modules/auth/auth.service.js";
 import {
   createRateLimitKey,
   InMemoryRateLimiter,
+  UpstashRateLimiter,
+  type RateLimitDecision,
+  type RateLimiter,
 } from "./modules/auth/rate-limit.service.js";
 import { CSRF_HEADER_NAME, isCsrfTokenValid } from "./modules/auth/csrf.service.js";
 import { NotesService } from "./modules/notes/notes.service.js";
@@ -103,7 +107,7 @@ async function handleGuestSessionRequest(
   response: ServerResponse,
   dependencies: {
     guestSessions: GuestSessionService;
-    rateLimiter: InMemoryRateLimiter;
+    rateLimiter: RateLimiter;
     rateLimitEnabled: boolean;
     clientIp: string;
     csrfEnabled: boolean;
@@ -162,11 +166,19 @@ async function handleGuestSessionRequest(
 
   if (request.method === "POST") {
     if (dependencies.rateLimitEnabled) {
-      const decision = dependencies.rateLimiter.check(
-        createRateLimitKey("auth:guest-session:ip", dependencies.clientIp),
-        20,
-        60 * 60 * 1000
-      );
+      let decision: RateLimitDecision;
+
+      try {
+        decision = await dependencies.rateLimiter.check(
+          createRateLimitKey("auth:guest-session:ip", dependencies.clientIp),
+          20,
+          60 * 60 * 1000
+        );
+      } catch (error) {
+        console.error("Guest session rate limiter unavailable:", error);
+        sendJson(response, 503, { error: "Authentication service temporarily unavailable" });
+        return;
+      }
 
       if (!decision.allowed) {
         response.setHeader("Retry-After", String(decision.retryAfterSeconds));
@@ -207,7 +219,16 @@ async function handleGuestSessionRequest(
 
 async function bootstrap() {
   const pool = new Pool({ connectionString: env.databaseUrl });
-  const rateLimiter = new InMemoryRateLimiter(env.authRateLimitMaxKeys);
+  const rateLimiter: RateLimiter =
+    env.authRateLimitStore === "upstash"
+      ? new UpstashRateLimiter(
+          new Redis({
+            url: env.upstashRedisRestUrl,
+            token: env.upstashRedisRestToken,
+            enableTelemetry: false,
+          })
+        )
+      : new InMemoryRateLimiter(env.authRateLimitMaxKeys);
   const pubSub = createPubSub<{ NOTE_UPDATED: [Note] }>();
   const embeddingsService = new OpenRouterEmbeddingsService(
     env.openRouterApiKey,
@@ -465,7 +486,7 @@ async function bootstrap() {
 
       try {
         await authService.purgeExpired();
-        rateLimiter.purgeExpired();
+        await rateLimiter.purgeExpired();
       } catch (error) {
         console.error("Authentication cleanup error:", error);
       } finally {

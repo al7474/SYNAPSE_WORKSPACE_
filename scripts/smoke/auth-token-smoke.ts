@@ -28,7 +28,8 @@ async function main(): Promise<void> {
       email,
       password: oldPassword,
     });
-    userId = registration.session.context.user.id;
+    assert(Boolean(registration), "Registration did not create an account");
+    userId = registration!.verification.user.id;
 
     const userRow = await pool.query<{ password_hash: string }>(
       "SELECT password_hash FROM users WHERE id = $1",
@@ -38,31 +39,52 @@ async function main(): Promise<void> {
     assert(passwordHash.startsWith("$2b$"), "Password was not stored as bcrypt");
     assert(passwordHash !== oldPassword, "Raw password was stored");
 
-    const verified = await authService.verifyEmail(registration.verification.token);
+    const verified = await authService.verifyEmail(registration!.verification.token);
     assert(verified.email === email, "Verification returned the wrong account");
 
     let verificationWasRejected = false;
 
     try {
-      await authService.verifyEmail(registration.verification.token);
+      await authService.verifyEmail(registration!.verification.token);
     } catch (error) {
       verificationWasRejected = error instanceof AuthError && error.code === "INVALID_TOKEN";
     }
 
     assert(verificationWasRejected, "Verification token was reusable");
 
+    const firstSession = await authService.login(email, oldPassword);
     const secondSession = await authService.login(email, oldPassword);
+    await authService.changePassword(firstSession.token, oldPassword, newPassword);
+    assert(
+      (await authService.resolveSession(firstSession.token)) === null,
+      "Password change did not revoke the active session"
+    );
+    assert(
+      (await authService.resolveSession(secondSession.token)) === null,
+      "Password change did not revoke the second session"
+    );
+
+    let oldPasswordWasRejectedAfterChange = false;
+
+    try {
+      await authService.login(email, oldPassword);
+    } catch (error) {
+      oldPasswordWasRejectedAfterChange = error instanceof AuthError && error.code === "INVALID_CREDENTIALS";
+    }
+
+    assert(oldPasswordWasRejectedAfterChange, "Old password remained valid after password change");
+    const changedSession = await authService.login(email, newPassword);
     const reset = await authService.requestPasswordReset(email);
     assert(Boolean(reset), "Password reset token was not created");
 
     await authService.resetPassword(reset!.token, newPassword);
     assert(
-      (await authService.resolveSession(registration.session.token)) === null,
-      "Password reset did not revoke the registration session"
-    );
-    assert(
       (await authService.resolveSession(secondSession.token)) === null,
       "Password reset did not revoke the second session"
+    );
+    assert(
+      (await authService.resolveSession(changedSession.token)) === null,
+      "Password reset did not revoke the changed-password session"
     );
 
     let oldPasswordWasRejected = false;
@@ -98,6 +120,7 @@ async function main(): Promise<void> {
           userId,
           bcryptHashStored: true,
           verificationSingleUse: true,
+          passwordChangeRevokedSessions: true,
           resetRevokedSessions: true,
           resetSingleUse: true,
         },

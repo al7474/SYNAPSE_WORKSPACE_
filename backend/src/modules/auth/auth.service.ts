@@ -40,7 +40,6 @@ type DbExecutor = Pool | PoolClient;
 
 export type AuthErrorCode =
   | "INVALID_INPUT"
-  | "EMAIL_IN_USE"
   | "INVALID_CREDENTIALS"
   | "INVALID_TOKEN"
   | "USER_NOT_FOUND";
@@ -142,10 +141,7 @@ export class AuthService {
     private readonly options: AuthServiceOptions
   ) {}
 
-  async register(input: RegisterInput): Promise<{
-    session: AuthSessionResult;
-    verification: AuthTokenResult;
-  }> {
+  async register(input: RegisterInput): Promise<{ verification: AuthTokenResult } | null> {
     const { name, email } = validateRegistrationInput(input);
     const passwordHash = await bcrypt.hash(input.password, this.options.bcryptCost);
     const client = await this.pool.connect();
@@ -166,14 +162,14 @@ export class AuthService {
         );
       } catch (error) {
         if (isUniqueViolation(error)) {
-          throw new AuthError("EMAIL_IN_USE", "An account with that email already exists", 409);
+          await client.query("ROLLBACK");
+          return null;
         }
 
         throw error;
       }
 
       const user = toAuthUser(userResult.rows[0]);
-      const session = await this.createSession(user, client);
       const verification = await this.createActionToken(
         user,
         "email_verification",
@@ -182,7 +178,7 @@ export class AuthService {
 
       await client.query("COMMIT");
 
-      return { session, verification };
+      return { verification };
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
@@ -426,8 +422,12 @@ export class AuthService {
         [tokenRow.user_id]
       );
       await client.query(
-        `UPDATE auth_action_tokens SET consumed_at = NOW() WHERE id = $1`,
-        [tokenRow.id]
+        `
+        UPDATE auth_action_tokens
+        SET consumed_at = NOW()
+        WHERE user_id = $1 AND purpose = 'password_reset' AND consumed_at IS NULL
+        `,
+        [tokenRow.user_id]
       );
       await client.query("COMMIT");
     } catch (error) {
@@ -438,6 +438,66 @@ export class AuthService {
     }
   }
 
+  async changePassword(
+    sessionToken: string,
+    currentPassword: string,
+    newPassword: string
+  ): Promise<void> {
+    if (!currentPassword) {
+      throw new AuthError("INVALID_CREDENTIALS", "Invalid current password", 401);
+    }
+
+    validatePassword(newPassword);
+    const client = await this.pool.connect();
+
+    try {
+      await client.query("BEGIN");
+      const sessionResult = await client.query<{
+        user_id: string | number;
+        password_hash: string;
+      }>(
+        `
+        SELECT s.user_id, u.password_hash
+        FROM auth_sessions s
+        INNER JOIN users u ON u.id = s.user_id
+        WHERE s.token_hash = $1
+          AND s.revoked_at IS NULL
+          AND s.expires_at > NOW()
+        FOR UPDATE
+        `,
+        [hashToken(sessionToken)]
+      );
+      const sessionRow = sessionResult.rows[0];
+
+      if (!sessionRow || !(await bcrypt.compare(currentPassword, sessionRow.password_hash))) {
+        throw new AuthError("INVALID_CREDENTIALS", "Invalid current password", 401);
+      }
+
+      const passwordHash = await bcrypt.hash(newPassword, this.options.bcryptCost);
+      await client.query(
+        `UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`,
+        [passwordHash, sessionRow.user_id]
+      );
+      await client.query(
+        `UPDATE auth_sessions SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL`,
+        [sessionRow.user_id]
+      );
+      await client.query(
+        `
+        UPDATE auth_action_tokens
+        SET consumed_at = NOW()
+        WHERE user_id = $1 AND purpose = 'password_reset' AND consumed_at IS NULL
+        `,
+        [sessionRow.user_id]
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
   private async createSession(user: AuthUser, executor: DbExecutor = this.pool): Promise<AuthSessionResult> {
     const token = createOpaqueToken();
     const expiresAt = new Date(Date.now() + this.options.sessionTtlMs);

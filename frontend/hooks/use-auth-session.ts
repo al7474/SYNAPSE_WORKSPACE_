@@ -274,14 +274,12 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
 
       try {
         const result = await registerAccount(name, email, authPassword);
-        activateSession(result.session);
-        onStatusChange("Account created");
-        pushToast(
-          result.verificationEmailSent ? "success" : "info",
-          result.verificationEmailSent
-            ? `Welcome ${name}. Check your email to verify your account.`
-            : `Welcome ${name}. The verification email could not be sent; check the backend email configuration.`
-        );
+        setAuthMode("login");
+        setAuthPassword("");
+        setAuthConfirmPassword("");
+        setAuthError(result.message);
+        onStatusChange("Registration request received");
+        pushToast("info", result.message);
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unable to create account";
         setAuthError(message);

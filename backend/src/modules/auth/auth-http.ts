@@ -31,6 +31,7 @@ export const AUTH_PATHS = {
   requestEmailVerification: "/auth/email-verification/request",
   requestPasswordReset: "/auth/password-reset/request",
   confirmPasswordReset: "/auth/password-reset/confirm",
+  changePassword: "/auth/password/change",
   csrf: "/auth/csrf",
 } as const;
 
@@ -184,24 +185,34 @@ async function readJsonBody(request: Request, maxBytes: number): Promise<JsonObj
 
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const ACTION_WINDOW_MS = 60 * 60 * 1000;
+const GENERIC_REGISTRATION_MESSAGE =
+  "If this email can be registered, verification instructions will be sent.";
 
-function allowRateLimitedRequest(
+async function allowRateLimitedRequest(
   response: ServerResponse,
   dependencies: AuthHttpDependencies,
   scope: string,
   value: string,
   limit: number,
   windowMs: number
-): boolean {
+): Promise<boolean> {
   if (!dependencies.rateLimitEnabled) {
     return true;
   }
 
-  const decision = dependencies.rateLimiter.check(
-    createRateLimitKey(scope, value),
-    limit,
-    windowMs
-  );
+  let decision: RateLimitDecision;
+
+  try {
+    decision = await dependencies.rateLimiter.check(
+      createRateLimitKey(scope, value),
+      limit,
+      windowMs
+    );
+  } catch (error) {
+    console.error("Authentication rate limiter unavailable:", error);
+    sendJson(response, 503, { error: "Authentication service temporarily unavailable" });
+    return false;
+  }
 
   if (!decision.allowed) {
     sendRateLimitedResponse(response, decision);
@@ -330,7 +341,7 @@ export async function handleAuthRequest(
     }
 
     if (request.method === "POST" && url.pathname === AUTH_PATHS.register) {
-      if (!allowRateLimitedRequest(response, dependencies, "auth:register:ip", dependencies.clientIp, 10, ACTION_WINDOW_MS)) {
+      if (!(await allowRateLimitedRequest(response, dependencies, "auth:register:ip", dependencies.clientIp, 10, ACTION_WINDOW_MS))) {
         return;
       }
 
@@ -343,32 +354,31 @@ export async function handleAuthRequest(
 
       const email = normalizeEmail(input.email);
 
-      if (!allowRateLimitedRequest(response, dependencies, "auth:register:email", email, 3, ACTION_WINDOW_MS)) {
+      if (!(await allowRateLimitedRequest(response, dependencies, "auth:register:email", email, 3, ACTION_WINDOW_MS))) {
         return;
       }
 
       const result = await dependencies.authService.register(input);
-      const verificationEmailSent = await deliverEmail(
-        "Verification",
-        () => dependencies.emailService.sendVerificationEmail(result.verification.user, result.verification.token)
-      );
+      if (result) {
+        void deliverEmail(
+          "Verification",
+          () => dependencies.emailService.sendVerificationEmail(result.verification.user, result.verification.token)
+        );
+      }
 
-      sendSessionResponse(response, 201, result.session, dependencies.isProduction, {
-        emailVerificationRequired: true,
-        verificationEmailSent,
-      });
+      sendJson(response, 202, { message: GENERIC_REGISTRATION_MESSAGE });
       return;
     }
 
     if (request.method === "POST" && url.pathname === AUTH_PATHS.login) {
-      if (!allowRateLimitedRequest(response, dependencies, "auth:login:ip", dependencies.clientIp, 30, LOGIN_WINDOW_MS)) {
+      if (!(await allowRateLimitedRequest(response, dependencies, "auth:login:ip", dependencies.clientIp, 30, LOGIN_WINDOW_MS))) {
         return;
       }
 
       const body = await readJsonBody(request, dependencies.maxBodyBytes);
       const email = normalizeEmail(requiredString(body, "email"));
 
-      if (!allowRateLimitedRequest(response, dependencies, "auth:login:email", email, 5, LOGIN_WINDOW_MS)) {
+      if (!(await allowRateLimitedRequest(response, dependencies, "auth:login:email", email, 5, LOGIN_WINDOW_MS))) {
         return;
       }
 
@@ -376,7 +386,7 @@ export async function handleAuthRequest(
         email,
         requiredString(body, "password")
       );
-      dependencies.rateLimiter.reset(createRateLimitKey("auth:login:email", email));
+      await dependencies.rateLimiter.reset(createRateLimitKey("auth:login:email", email));
       sendSessionResponse(response, 200, session, dependencies.isProduction);
       return;
     }
@@ -391,12 +401,12 @@ export async function handleAuthRequest(
       return;
     }
 
-    if (request.method === "POST" && url.pathname === AUTH_PATHS.requestEmailVerification) {
+    if (request.method === "POST" && url.pathname === AUTH_PATHS.changePassword) {
       if (!token) {
         throw new AuthError("INVALID_CREDENTIALS", "Authentication required", 401);
       }
 
-      if (!allowRateLimitedRequest(response, dependencies, "auth:verify-request:ip", dependencies.clientIp, 10, ACTION_WINDOW_MS)) {
+      if (!(await allowRateLimitedRequest(response, dependencies, "auth:password-change:ip", dependencies.clientIp, 10, ACTION_WINDOW_MS))) {
         return;
       }
 
@@ -406,7 +416,37 @@ export async function handleAuthRequest(
         throw new AuthError("INVALID_CREDENTIALS", "Authentication required", 401);
       }
 
-      if (!allowRateLimitedRequest(response, dependencies, "auth:verify-request:user", session.user.id, 3, ACTION_WINDOW_MS)) {
+      if (!(await allowRateLimitedRequest(response, dependencies, "auth:password-change:user", session.user.id, 5, ACTION_WINDOW_MS))) {
+        return;
+      }
+
+      const body = await readJsonBody(request, dependencies.maxBodyBytes);
+      await dependencies.authService.changePassword(
+        token,
+        requiredString(body, "currentPassword"),
+        requiredString(body, "newPassword")
+      );
+      response.setHeader("Set-Cookie", clearAuthSessionCookie(dependencies.isProduction));
+      sendJson(response, 200, { passwordChanged: true });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === AUTH_PATHS.requestEmailVerification) {
+      if (!token) {
+        throw new AuthError("INVALID_CREDENTIALS", "Authentication required", 401);
+      }
+
+      if (!(await allowRateLimitedRequest(response, dependencies, "auth:verify-request:ip", dependencies.clientIp, 10, ACTION_WINDOW_MS))) {
+        return;
+      }
+
+      const session = await dependencies.authService.resolveSession(token);
+
+      if (!session) {
+        throw new AuthError("INVALID_CREDENTIALS", "Authentication required", 401);
+      }
+
+      if (!(await allowRateLimitedRequest(response, dependencies, "auth:verify-request:user", session.user.id, 3, ACTION_WINDOW_MS))) {
         return;
       }
 
@@ -426,14 +466,14 @@ export async function handleAuthRequest(
     }
 
     if (request.method === "POST" && url.pathname === AUTH_PATHS.requestPasswordReset) {
-      if (!allowRateLimitedRequest(response, dependencies, "auth:reset-request:ip", dependencies.clientIp, 10, ACTION_WINDOW_MS)) {
+      if (!(await allowRateLimitedRequest(response, dependencies, "auth:reset-request:ip", dependencies.clientIp, 10, ACTION_WINDOW_MS))) {
         return;
       }
 
       const body = await readJsonBody(request, dependencies.maxBodyBytes);
       const email = normalizeEmail(requiredString(body, "email"));
 
-      if (!allowRateLimitedRequest(response, dependencies, "auth:reset-request:email", email, 3, ACTION_WINDOW_MS)) {
+      if (!(await allowRateLimitedRequest(response, dependencies, "auth:reset-request:email", email, 3, ACTION_WINDOW_MS))) {
         return;
       }
 
@@ -455,7 +495,7 @@ export async function handleAuthRequest(
     }
 
     if (request.method === "POST" && url.pathname === AUTH_PATHS.confirmPasswordReset) {
-      if (!allowRateLimitedRequest(response, dependencies, "auth:reset-confirm:ip", dependencies.clientIp, 10, ACTION_WINDOW_MS)) {
+      if (!(await allowRateLimitedRequest(response, dependencies, "auth:reset-confirm:ip", dependencies.clientIp, 10, ACTION_WINDOW_MS))) {
         return;
       }
 

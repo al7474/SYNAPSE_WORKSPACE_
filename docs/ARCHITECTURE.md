@@ -45,10 +45,10 @@ Keep GraphQL and browser persistence inside hooks or `lib/` modules. Components 
 - Demo sessions are created by the backend and identified by an opaque `HttpOnly` cookie.
 - The backend resolves the demo owner from `guest_sessions` before GraphQL operations run.
 - Account sessions are created by the backend, stored as SHA-256 token hashes, and identified by a separate opaque `HttpOnly` cookie.
-- Authentication uses revocable, database-backed opaque sessions rather than JWTs. This keeps logout, password-reset invalidation, and account-wide session revocation immediate.
+- Authentication uses revocable, database-backed opaque sessions rather than JWTs. This keeps logout, password-reset invalidation, and account-wide session revocation immediate. Registration does not auto-create a session and always returns a generic response to avoid email enumeration.
 - Account passwords are stored with bcrypt; raw passwords and session tokens are never stored in PostgreSQL.
 - Account email verification and password recovery use expiring, single-use action tokens whose hashes are stored in PostgreSQL.
-- New verification and password-reset links carry their action token in the URL fragment (`#token=...`), and the frontend removes it before submitting the token to the backend. Legacy query-string links are accepted once for migration and then removed from the address bar.
+- Verification and password-reset links carry their action token only in the URL fragment (`#token=...`), and the frontend removes it before submitting the token to the backend. Query-string tokens are not accepted.
 - Unverified account sessions can use private boards, notes, autosave, and search. GraphQL sharing and collaborator-management operations return `EMAIL_VERIFICATION_REQUIRED` until the email is verified. Guest sessions are unaffected by account verification.
 - Backend resolvers use typed ownership (`owner_kind` plus `owner_user_id` or `owner_guest_session_id`) for account and guest authorization. The textual `owner_id` remains a compatibility field.
 
@@ -74,7 +74,7 @@ Keep GraphQL and browser persistence inside hooks or `lib/` modules. Components 
 
 - Authentication, guest-session, and GraphQL mutation requests require the double-submit CSRF token from `GET /auth/csrf` in the `X-CSRF-Token` header and `synapse_csrf_token` cookie. The CSRF cookie is intentionally readable by the frontend; the account and guest session cookies remain `HttpOnly`.
 - Mutating requests are checked against `FRONTEND_ORIGIN` in production, and authentication responses use `no-store` plus restrictive security headers. Configure `TRUST_PROXY=true` only when a trusted reverse proxy overwrites `X-Forwarded-For`.
-- Registration, login, guest-session creation, and email/password actions are rate limited. The default implementation is process-local and suitable for local development or one backend instance; multi-instance production deployments should enforce equivalent limits with Redis and/or an edge WAF.
+- Registration, login, guest-session creation, and email/password actions are rate limited. Local development uses the bounded in-memory adapter; production uses the atomic Upstash Redis adapter configured through `AUTH_RATE_LIMIT_STORE=upstash`, `UPSTASH_REDIS_REST_URL`, and `UPSTASH_REDIS_REST_TOKEN`.
 - Authentication request bodies are capped by `AUTH_BODY_MAX_BYTES` (16 KiB by default). Production deployments must use HTTPS origins and a real email provider.
 
 - Only env templates are tracked: `.env.example`, `backend/.env.example`, `frontend/.env.example`.

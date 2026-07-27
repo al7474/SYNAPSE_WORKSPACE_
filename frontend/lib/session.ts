@@ -27,9 +27,8 @@ type AccountSessionResponse = {
   expiresAt: string;
 };
 
-type RegisterResponse = AccountSessionResponse & {
-  emailVerificationRequired: boolean;
-  verificationEmailSent: boolean;
+type RegisterResponse = {
+  message: string;
 };
 
 type VerifyEmailResponse = {
@@ -195,7 +194,7 @@ export async function registerAccount(
   name: string,
   email: string,
   password: string
-): Promise<{ session: SessionState; verificationEmailSent: boolean }> {
+): Promise<{ message: string }> {
   const response = await fetchWithCsrf(getAuthEndpoint("/auth/register"), {
     method: "POST",
     credentials: "include",
@@ -207,10 +206,7 @@ export async function registerAccount(
   });
   const payload = await parseResponse<RegisterResponse>(response, "Unable to create account");
 
-  return {
-    session: toAccountSessionState(payload),
-    verificationEmailSent: payload.verificationEmailSent,
-  };
+  return { message: payload.message };
 }
 
 export async function loginAccount(email: string, password: string): Promise<SessionState> {
@@ -291,6 +287,20 @@ export async function resetPassword(token: string, password: string): Promise<vo
   });
 
   await parseResponse<{ passwordReset: boolean }>(response, "Unable to reset password");
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  const response = await fetchWithCsrf(getAuthEndpoint("/auth/password/change"), {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+
+  await parseResponse<{ passwordChanged: boolean }>(response, "Unable to change password");
 }
 
 export async function deleteGuestSession(): Promise<void> {

@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { Redis } from "@upstash/redis";
 
 export interface RateLimitDecision {
   allowed: boolean;
@@ -7,9 +8,16 @@ export interface RateLimitDecision {
 }
 
 export interface RateLimiter {
-  check(key: string, limit: number, windowMs: number): RateLimitDecision;
-  reset(key: string): void;
-  purgeExpired(): void;
+  check(key: string, limit: number, windowMs: number): Promise<RateLimitDecision>;
+  reset(key: string): Promise<void>;
+  purgeExpired(): Promise<void>;
+}
+
+export class RateLimitUnavailableError extends Error {
+  constructor(cause: unknown) {
+    super("Rate limiter is unavailable", { cause });
+    this.name = "RateLimitUnavailableError";
+  }
 }
 
 type RateLimitBucket = {
@@ -20,6 +28,16 @@ type RateLimitBucket = {
 export function createRateLimitKey(scope: string, value: string): string {
   const digest = crypto.createHash("sha256").update(value).digest("hex");
   return `${scope}:${digest}`;
+}
+
+function validateRateLimitParameters(limit: number, windowMs: number): void {
+  if (!Number.isInteger(limit) || limit < 1) {
+    throw new Error("Rate limiter limit must be a positive integer");
+  }
+
+  if (!Number.isInteger(windowMs) || windowMs < 1) {
+    throw new Error("Rate limiter window must be a positive integer");
+  }
 }
 
 export class InMemoryRateLimiter implements RateLimiter {
@@ -34,14 +52,8 @@ export class InMemoryRateLimiter implements RateLimiter {
     }
   }
 
-  check(key: string, limit: number, windowMs: number): RateLimitDecision {
-    if (!Number.isInteger(limit) || limit < 1) {
-      throw new Error("Rate limiter limit must be a positive integer");
-    }
-
-    if (!Number.isInteger(windowMs) || windowMs < 1) {
-      throw new Error("Rate limiter window must be a positive integer");
-    }
+  async check(key: string, limit: number, windowMs: number): Promise<RateLimitDecision> {
+    validateRateLimitParameters(limit, windowMs);
 
     const now = this.clock();
     const current = this.buckets.get(key);
@@ -73,11 +85,11 @@ export class InMemoryRateLimiter implements RateLimiter {
     };
   }
 
-  reset(key: string): void {
+  async reset(key: string): Promise<void> {
     this.buckets.delete(key);
   }
 
-  purgeExpired(): void {
+  async purgeExpired(): Promise<void> {
     const now = this.clock();
     this.ensureCapacity(now);
   }
@@ -98,5 +110,63 @@ export class InMemoryRateLimiter implements RateLimiter {
 
       this.buckets.delete(oldestKey);
     }
+  }
+}
+
+const ATOMIC_RATE_LIMIT_SCRIPT = `
+local count = redis.call("INCR", KEYS[1])
+if count == 1 then
+  redis.call("PEXPIRE", KEYS[1], ARGV[1])
+end
+local remaining = redis.call("PTTL", KEYS[1])
+return { count, remaining }
+`;
+
+type RateLimitScript = {
+  exec(keys: string[], args: string[]): Promise<[number, number]>;
+};
+
+export class UpstashRateLimiter implements RateLimiter {
+  private readonly script: RateLimitScript;
+
+  constructor(
+    private readonly redis: Redis,
+    private readonly keyPrefix = "synapse:auth:ratelimit:"
+  ) {
+    this.script = redis.createScript<[number, number]>(ATOMIC_RATE_LIMIT_SCRIPT);
+  }
+
+  async check(key: string, limit: number, windowMs: number): Promise<RateLimitDecision> {
+    validateRateLimitParameters(limit, windowMs);
+
+    try {
+      const [count, ttlMs] = await this.script.exec(
+        [this.getRedisKey(key)],
+        [String(windowMs)]
+      );
+      const retryAfterSeconds = Math.max(1, Math.ceil(Math.max(0, ttlMs) / 1000));
+
+      return {
+        allowed: count <= limit,
+        remaining: Math.max(0, limit - count),
+        retryAfterSeconds,
+      };
+    } catch (error) {
+      throw new RateLimitUnavailableError(error);
+    }
+  }
+
+  async reset(key: string): Promise<void> {
+    try {
+      await this.redis.del(this.getRedisKey(key));
+    } catch (error) {
+      throw new RateLimitUnavailableError(error);
+    }
+  }
+
+  async purgeExpired(): Promise<void> {}
+
+  private getRedisKey(key: string): string {
+    return `${this.keyPrefix}${key}`;
   }
 }

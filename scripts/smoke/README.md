@@ -9,8 +9,8 @@ This folder centralizes infrastructure smoke tests to keep the project root clea
 - `semantic-search-smoke.js`: inserts 3-5 notes with embeddings and validates semantic ranking.
 - `resilience-fallback-smoke.js`: simulates OpenRouter failures (invalid key and timeout) and verifies `embedding_pending=true` fallback writes.
 - `graphql-base-smoke.js`: validates GraphQL base operations (`createNote`, `updateNote`, `listNotes`).
-- `auth-account-smoke.js`: validates account registration, cookies, session lookup, typed GraphQL ownership, login, logout, recovery response privacy, and invalid-password rejection.
-- `auth-token-smoke.ts`: validates bcrypt storage, email-verification single use, password-reset session revocation, password replacement, and reset-token single use.
+- `auth-account-smoke.js`: validates generic registration responses, cookies, session lookup, typed GraphQL ownership, unverified private access, login, logout, authenticated password-change revocation, recovery response privacy, and invalid-password rejection.
+- `auth-token-smoke.ts`: validates bcrypt storage, email-verification single use, authenticated password-change session revocation, password-reset session revocation, password replacement, and reset-token single use.
 - `graphql-subscription-noteupdated-smoke.js`: validates GraphQL `noteUpdated` subscription emits ordered events when a note is updated.
 - `autosave-realistic-smoke.js`: simulates autosave updates every 2-3 seconds for ~1-2 minutes and validates no duplicates/content loss.
 

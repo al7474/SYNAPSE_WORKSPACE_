@@ -181,18 +181,37 @@ async function main() {
       password,
     });
 
-    assert(registered.response.status === 201, "Registration failed");
+    assert(registered.response.status === 202, "Registration failed");
+    assert(
+      registered.payload.message ===
+        "If this email can be registered, verification instructions will be sent.",
+      "Registration response is not generic"
+    );
 
-    const registerCookieHeader = registered.response.headers.get("set-cookie");
-    assert(Boolean(registerCookieHeader), "Registration did not set a session cookie");
+    const duplicateRegistration = await requestJson("/auth/register", "POST", {
+      name: "Another Auth Smoke",
+      email,
+      password: "different-password-456",
+    });
+    assert(duplicateRegistration.response.status === 202, "Duplicate registration leaked account state");
+    assert(
+      JSON.stringify(duplicateRegistration.payload) === JSON.stringify(registered.payload),
+      "Registration responses are not generic"
+    );
+    assert(!duplicateRegistration.payload.user, "Registration exposed account data");
+
+    const firstLogin = await requestJson("/auth/login", "POST", { email, password });
+    assert(firstLogin.response.status === 200, "Login after registration failed");
+    const registerCookieHeader = firstLogin.response.headers.get("set-cookie");
+    assert(Boolean(registerCookieHeader), "Login did not set a session cookie");
     assert(registerCookieHeader.includes("HttpOnly"), "Session cookie is not HttpOnly");
     assert(registerCookieHeader.includes("SameSite=Lax"), "Session cookie has the wrong SameSite policy");
     assert(registerCookieHeader.includes("Path=/"), "Session cookie has no root path");
 
     const registerCookie = registerCookieHeader.split(";")[0];
-    userId = registered.payload.user.id;
+    userId = firstLogin.payload.user.id;
 
-    assert(registered.payload.user.emailVerified === false, "New account should require email verification");
+    assert(firstLogin.payload.user.emailVerified === false, "New account should require email verification");
 
     const currentSession = await requestJson("/auth/session", "GET", null, registerCookie);
     assert(currentSession.response.status === 200, "Current session lookup failed");
@@ -469,6 +488,24 @@ async function main() {
     assert(loggedIn.response.status === 200, "Login failed after registration");
     const loginCookieHeader = loggedIn.response.headers.get("set-cookie");
     assert(Boolean(loginCookieHeader), "Login did not set a session cookie");
+    const passwordChangeCookie = loginCookieHeader.split(";")[0];
+    const changedPassword = "changed-password-789";
+    const passwordChange = await requestJson(
+      "/auth/password/change",
+      "POST",
+      { currentPassword: password, newPassword: changedPassword },
+      passwordChangeCookie
+    );
+    assert(passwordChange.response.status === 200, "Authenticated password change failed");
+    assert(passwordChange.payload.passwordChanged === true, "Password change response was invalid");
+    const revokedChangedSession = await requestJson("/auth/session", "GET", null, passwordChangeCookie);
+    assert(revokedChangedSession.response.status === 401, "Password change did not revoke the active session");
+
+    const changedLogin = await requestJson("/auth/login", "POST", {
+      email,
+      password: changedPassword,
+    });
+    assert(changedLogin.response.status === 200, "New password could not log in");
 
     const knownReset = await requestJson("/auth/password-reset/request", "POST", { email });
     const unknownReset = await requestJson("/auth/password-reset/request", "POST", {
@@ -517,6 +554,7 @@ async function main() {
           logoutStatus: loggedOut.response.status,
           loginStatus: loggedIn.response.status,
           resetStatus: knownReset.response.status,
+          passwordChangeStatus: passwordChange.response.status,
           wrongLoginStatus: wrongLogin.response.status,
         },
         null,
