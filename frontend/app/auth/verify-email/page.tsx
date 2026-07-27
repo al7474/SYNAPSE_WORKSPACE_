@@ -7,6 +7,30 @@ import { verifyEmail } from "@/lib/session";
 
 type VerificationState = "loading" | "success" | "error";
 
+function readAndClearActionToken(): string {
+  const url = new URL(window.location.href);
+  const fragmentParameters = new URLSearchParams(url.hash.slice(1));
+  const queryToken = url.searchParams.get("token")?.trim() || "";
+  const fragmentToken = fragmentParameters.get("token")?.trim() || "";
+  const token = fragmentToken || queryToken;
+
+  if (url.searchParams.has("token")) {
+    url.searchParams.delete("token");
+  }
+
+  if (fragmentParameters.has("token")) {
+    fragmentParameters.delete("token");
+    const nextHash = fragmentParameters.toString();
+    url.hash = nextHash ? `#${nextHash}` : "";
+  }
+
+  if (url.href !== window.location.href) {
+    window.history.replaceState(window.history.state, document.title, url.toString());
+  }
+
+  return token;
+}
+
 export default function VerifyEmailPage() {
   const [state, setState] = useState<VerificationState>("loading");
   const [message, setMessage] = useState("Verifying your email...");
@@ -18,7 +42,7 @@ export default function VerifyEmailPage() {
     }
 
     startedRef.current = true;
-    const token = new URLSearchParams(window.location.search).get("token")?.trim() || "";
+    const token = readAndClearActionToken();
 
     if (!token) {
       setState("error");

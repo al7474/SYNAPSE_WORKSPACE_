@@ -23,14 +23,18 @@ export default function HomePage() {
     pushToast,
   });
 
+  const workspaceSessionId = auth.sessionId;
+  const canManageSharing = auth.sessionMode !== "user" || auth.emailVerified;
+
   const boards = useBoards({
-    sessionId: auth.sessionId,
+    sessionId: workspaceSessionId,
+    canManageSharing,
     onStatusChange: setStatus,
     pushToast,
   });
 
   const notes = useNotes({
-    sessionId: auth.sessionId,
+    sessionId: workspaceSessionId,
     activeBoardId: boards.activeBoardId,
     activeShareToken: boards.activeShareToken,
     canEditBoard: boards.canEditBoard,
@@ -150,6 +154,17 @@ export default function HomePage() {
 
   return (
     <WorkspaceShell
+      emailVerification={
+        auth.sessionMode === "user" && !auth.emailVerified
+          ? {
+              email: auth.currentUserEmail,
+              error: auth.authError,
+              isSubmitting: auth.isSigningIn,
+              onResend: auth.handleRequestEmailVerification,
+              onCheck: auth.checkEmailVerification,
+            }
+          : undefined
+      }
       header={{
         isSidebarOpen,
         onToggleSidebar: () => setIsSidebarOpen((isOpen) => !isOpen),
@@ -160,6 +175,7 @@ export default function HomePage() {
         activeBoardId: boards.activeBoardId,
         sessionId: auth.sessionId,
         sessionMode: auth.sessionMode,
+        canManageSharing,
         currentUserEmail: auth.currentUserEmail,
         isSidebarOpen,
         isCreatingBoard: boards.isCreatingBoard,
@@ -173,6 +189,9 @@ export default function HomePage() {
         onCopyShareLink: boards.handleCopyExistingShareLink,
         onRevokeShareLink: boards.handleRevokeShareLink,
         onShowBoardAccess: handleShowBoardAccess,
+        onVerificationRequired: () => {
+          pushToast("info", "Verify your email to manage sharing and collaborators");
+        },
         onCreateBoard: boards.handleCreateBoard,
         onDeleteDemoWorkspace: handleDeleteDemoWorkspace,
       }}

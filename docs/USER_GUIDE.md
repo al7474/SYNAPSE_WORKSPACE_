@@ -13,8 +13,9 @@ Forget long registration forms or having to verify your email just to test the a
 ### 2. Account Access
 
 * **Registration and login:** Account passwords are validated and hashed by the backend. The browser receives an expiring `HttpOnly` session cookie instead of storing an identity in local storage.
-* **Email verification:** After registration, Synapse sends a single-use verification link. Local development can use the console email provider, which prints the link in the backend log.
+* **Email verification:** After registration, Synapse sends a single-use verification link. The link is consumed with a protected `POST` request. You can keep creating and editing private boards and notes while verification is pending; sharing and collaborator access management unlock after verification. Local development can use the console email provider, which prints the link in the backend log.
 * **Password recovery:** The recovery form always returns the same response whether an email exists or not. A valid, single-use reset link replaces the password and signs out existing sessions.
+* **Session protection:** Mutating browser requests use a CSRF token and account sessions can be revoked immediately by logout or password reset. The implementation uses opaque server-side sessions rather than JWTs.
 * **Production email:** A delivery provider such as Resend or SMTP is required to send real messages. It does not perform password hashing or token validation; those controls stay in the backend.
 
 ### 3. A Super Smooth & Modern Editor

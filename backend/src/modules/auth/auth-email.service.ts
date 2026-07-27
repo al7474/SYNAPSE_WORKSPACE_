@@ -113,7 +113,7 @@ export class AuthEmailService {
 
   private buildUrl(baseUrl: string, pathname: string, token: string): string {
     const url = new URL(pathname, `${baseUrl.replace(/\/$/, "")}/`);
-    url.searchParams.set("token", token);
+    url.hash = `token=${encodeURIComponent(token)}`;
     return url.toString();
   }
 

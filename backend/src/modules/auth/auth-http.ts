@@ -4,8 +4,21 @@ import { AuthEmailService } from "./auth-email.service.js";
 import {
   AuthError,
   AuthService,
+  normalizeEmail,
   type RegisterInput,
 } from "./auth.service.js";
+import {
+  createRateLimitKey,
+  type RateLimitDecision,
+  type RateLimiter,
+} from "./rate-limit.service.js";
+import {
+  CSRF_HEADER_NAME,
+  createCsrfToken,
+  isCsrfTokenValid,
+  readCsrfCookie,
+  serializeCsrfCookie,
+} from "./csrf.service.js";
 
 export const AUTH_SESSION_COOKIE_NAME = "synapse_auth_session";
 
@@ -18,6 +31,7 @@ export const AUTH_PATHS = {
   requestEmailVerification: "/auth/email-verification/request",
   requestPasswordReset: "/auth/password-reset/request",
   confirmPasswordReset: "/auth/password-reset/confirm",
+  csrf: "/auth/csrf",
 } as const;
 
 type JsonObject = Record<string, unknown>;
@@ -26,12 +40,25 @@ export interface AuthHttpDependencies {
   authService: AuthService;
   emailService: AuthEmailService;
   isProduction: boolean;
+  rateLimiter: RateLimiter;
+  rateLimitEnabled: boolean;
+  clientIp: string;
+  maxBodyBytes: number;
+  csrfEnabled: boolean;
 }
 
 function sendJson(response: ServerResponse, statusCode: number, payload: unknown): void {
   response.statusCode = statusCode;
   response.setHeader("Content-Type", "application/json; charset=utf-8");
+  response.setHeader("Cache-Control", "no-store");
+  response.setHeader("Pragma", "no-cache");
+  response.setHeader("Expires", "0");
   response.end(JSON.stringify(payload));
+}
+
+function sendRateLimitedResponse(response: ServerResponse, decision: RateLimitDecision): void {
+  response.setHeader("Retry-After", String(decision.retryAfterSeconds));
+  sendJson(response, 429, { error: "Too many requests. Please try again later." });
 }
 
 function toPublicUser(user: AuthUser): {
@@ -92,11 +119,58 @@ export function clearAuthSessionCookie(secure: boolean): string {
   return `${AUTH_SESSION_COOKIE_NAME}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
 }
 
-async function readJsonBody(request: Request): Promise<JsonObject> {
+async function readJsonBody(request: Request, maxBytes: number): Promise<JsonObject> {
+  const contentLengthHeader = request.headers.get("content-length");
+
+  if (contentLengthHeader) {
+    const contentLength = Number(contentLengthHeader);
+
+    if (!Number.isInteger(contentLength) || contentLength < 0 || contentLength > maxBytes) {
+      throw new AuthError("INVALID_INPUT", "Request body is too large");
+    }
+  }
+
+  if (!request.body) {
+    throw new AuthError("INVALID_INPUT", "Request body must be valid JSON");
+  }
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (done) {
+        break;
+      }
+
+      totalBytes += value.byteLength;
+
+      if (totalBytes > maxBytes) {
+        await reader.cancel();
+        throw new AuthError("INVALID_INPUT", "Request body is too large");
+      }
+
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bodyBytes = new Uint8Array(totalBytes);
+  let offset = 0;
+
+  for (const chunk of chunks) {
+    bodyBytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
   let value: unknown;
 
   try {
-    value = await request.json();
+    value = JSON.parse(new TextDecoder().decode(bodyBytes)) as unknown;
   } catch {
     throw new AuthError("INVALID_INPUT", "Request body must be valid JSON");
   }
@@ -106,6 +180,35 @@ async function readJsonBody(request: Request): Promise<JsonObject> {
   }
 
   return value as JsonObject;
+}
+
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const ACTION_WINDOW_MS = 60 * 60 * 1000;
+
+function allowRateLimitedRequest(
+  response: ServerResponse,
+  dependencies: AuthHttpDependencies,
+  scope: string,
+  value: string,
+  limit: number,
+  windowMs: number
+): boolean {
+  if (!dependencies.rateLimitEnabled) {
+    return true;
+  }
+
+  const decision = dependencies.rateLimiter.check(
+    createRateLimitKey(scope, value),
+    limit,
+    windowMs
+  );
+
+  if (!decision.allowed) {
+    sendRateLimitedResponse(response, decision);
+    return false;
+  }
+
+  return true;
 }
 
 function requiredString(body: JsonObject, field: string): string {
@@ -196,8 +299,26 @@ export async function handleAuthRequest(
       return;
     }
 
-    if (request.method === "GET" && url.pathname === AUTH_PATHS.verifyEmail) {
-      const verificationToken = url.searchParams.get("token")?.trim() || "";
+    if (request.method === "GET" && url.pathname === AUTH_PATHS.csrf) {
+      const csrfToken = readCsrfCookie(request) || createCsrfToken();
+      response.setHeader("Set-Cookie", serializeCsrfCookie(csrfToken, dependencies.isProduction));
+      sendJson(response, 200, { csrfToken });
+      return;
+    }
+
+    if (
+      dependencies.csrfEnabled &&
+      request.method !== "GET" &&
+      request.method !== "HEAD" &&
+      !isCsrfTokenValid(request.headers.get("cookie"), request.headers.get(CSRF_HEADER_NAME))
+    ) {
+      sendJson(response, 403, { error: "Invalid CSRF token" });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === AUTH_PATHS.verifyEmail) {
+      const body = await readJsonBody(request, dependencies.maxBodyBytes);
+      const verificationToken = requiredString(body, "token").trim();
 
       if (!verificationToken) {
         throw new AuthError("INVALID_INPUT", "Verification token is required");
@@ -209,12 +330,23 @@ export async function handleAuthRequest(
     }
 
     if (request.method === "POST" && url.pathname === AUTH_PATHS.register) {
-      const body = await readJsonBody(request);
+      if (!allowRateLimitedRequest(response, dependencies, "auth:register:ip", dependencies.clientIp, 10, ACTION_WINDOW_MS)) {
+        return;
+      }
+
+      const body = await readJsonBody(request, dependencies.maxBodyBytes);
       const input: RegisterInput = {
         name: requiredString(body, "name"),
         email: requiredString(body, "email"),
         password: requiredString(body, "password"),
       };
+
+      const email = normalizeEmail(input.email);
+
+      if (!allowRateLimitedRequest(response, dependencies, "auth:register:email", email, 3, ACTION_WINDOW_MS)) {
+        return;
+      }
+
       const result = await dependencies.authService.register(input);
       const verificationEmailSent = await deliverEmail(
         "Verification",
@@ -229,11 +361,22 @@ export async function handleAuthRequest(
     }
 
     if (request.method === "POST" && url.pathname === AUTH_PATHS.login) {
-      const body = await readJsonBody(request);
+      if (!allowRateLimitedRequest(response, dependencies, "auth:login:ip", dependencies.clientIp, 30, LOGIN_WINDOW_MS)) {
+        return;
+      }
+
+      const body = await readJsonBody(request, dependencies.maxBodyBytes);
+      const email = normalizeEmail(requiredString(body, "email"));
+
+      if (!allowRateLimitedRequest(response, dependencies, "auth:login:email", email, 5, LOGIN_WINDOW_MS)) {
+        return;
+      }
+
       const session = await dependencies.authService.login(
-        requiredString(body, "email"),
+        email,
         requiredString(body, "password")
       );
+      dependencies.rateLimiter.reset(createRateLimitKey("auth:login:email", email));
       sendSessionResponse(response, 200, session, dependencies.isProduction);
       return;
     }
@@ -253,10 +396,18 @@ export async function handleAuthRequest(
         throw new AuthError("INVALID_CREDENTIALS", "Authentication required", 401);
       }
 
+      if (!allowRateLimitedRequest(response, dependencies, "auth:verify-request:ip", dependencies.clientIp, 10, ACTION_WINDOW_MS)) {
+        return;
+      }
+
       const session = await dependencies.authService.resolveSession(token);
 
       if (!session) {
         throw new AuthError("INVALID_CREDENTIALS", "Authentication required", 401);
+      }
+
+      if (!allowRateLimitedRequest(response, dependencies, "auth:verify-request:user", session.user.id, 3, ACTION_WINDOW_MS)) {
+        return;
       }
 
       const verification = await dependencies.authService.requestEmailVerification(session.user.id);
@@ -275,9 +426,19 @@ export async function handleAuthRequest(
     }
 
     if (request.method === "POST" && url.pathname === AUTH_PATHS.requestPasswordReset) {
-      const body = await readJsonBody(request);
+      if (!allowRateLimitedRequest(response, dependencies, "auth:reset-request:ip", dependencies.clientIp, 10, ACTION_WINDOW_MS)) {
+        return;
+      }
+
+      const body = await readJsonBody(request, dependencies.maxBodyBytes);
+      const email = normalizeEmail(requiredString(body, "email"));
+
+      if (!allowRateLimitedRequest(response, dependencies, "auth:reset-request:email", email, 3, ACTION_WINDOW_MS)) {
+        return;
+      }
+
       const result = await dependencies.authService.requestPasswordReset(
-        requiredString(body, "email")
+        email
       );
 
       if (result) {
@@ -294,7 +455,11 @@ export async function handleAuthRequest(
     }
 
     if (request.method === "POST" && url.pathname === AUTH_PATHS.confirmPasswordReset) {
-      const body = await readJsonBody(request);
+      if (!allowRateLimitedRequest(response, dependencies, "auth:reset-confirm:ip", dependencies.clientIp, 10, ACTION_WINDOW_MS)) {
+        return;
+      }
+
+      const body = await readJsonBody(request, dependencies.maxBodyBytes);
       await dependencies.authService.resetPassword(
         requiredString(body, "token"),
         requiredString(body, "password")

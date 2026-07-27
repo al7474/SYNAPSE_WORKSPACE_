@@ -4,17 +4,53 @@ const BASE_URL = process.env.AUTH_SMOKE_BASE_URL || "http://localhost:4000";
 const DATABASE_URL =
   process.env.DATABASE_URL || "postgresql://postgres:postgres@127.0.0.1:5434/synapse";
 
+let csrfCookie = null;
+let csrfToken = null;
+
 function assert(condition, message) {
   if (!condition) {
     throw new Error(message);
   }
 }
 
+async function ensureCsrfToken() {
+  if (csrfToken && csrfCookie) {
+    return;
+  }
+
+  const response = await fetch(`${BASE_URL}/auth/csrf`, {
+    method: "GET",
+    headers: { Accept: "application/json", Origin: "http://localhost:3000" },
+    signal: AbortSignal.timeout(10000),
+  });
+  const payload = await response.json();
+  const setCookie = response.headers.get("set-cookie") || "";
+
+  assert(response.ok, "CSRF bootstrap failed");
+  assert(typeof payload.csrfToken === "string", "CSRF bootstrap did not return a token");
+  assert(setCookie.includes("synapse_csrf_token="), "CSRF bootstrap did not set a cookie");
+
+  csrfToken = payload.csrfToken;
+  csrfCookie = setCookie.split(";")[0];
+}
+
+function withCookies(cookie) {
+  return [csrfCookie, cookie].filter(Boolean).join("; ");
+}
+
 async function requestJson(path, method, body, cookie) {
-  const headers = { "content-type": "application/json" };
+  await ensureCsrfToken();
+
+  const headers = {
+    "content-type": "application/json",
+    Origin: "http://localhost:3000",
+    "x-csrf-token": csrfToken,
+  };
 
   if (cookie) {
-    headers.Cookie = cookie;
+    headers.Cookie = withCookies(cookie);
+  } else {
+    headers.Cookie = csrfCookie;
   }
 
   const requestInit = {
@@ -36,11 +72,75 @@ async function requestJson(path, method, body, cookie) {
   };
 }
 
+async function requestJsonWithCsrfHeader(path, method, body, cookie, csrfHeader) {
+  await ensureCsrfToken();
+
+  const headers = {
+    "content-type": "application/json",
+    Origin: "http://localhost:3000",
+    "x-csrf-token": csrfHeader,
+    Cookie: withCookies(cookie),
+  };
+  const requestInit = {
+    method,
+    headers,
+    signal: AbortSignal.timeout(10000),
+  };
+
+  if (body) {
+    requestInit.body = JSON.stringify(body);
+  }
+
+  const response = await fetch(`${BASE_URL}${path}`, requestInit);
+  const text = await response.text();
+
+  return {
+    response,
+    payload: text ? JSON.parse(text) : null,
+  };
+}
+
+async function requestJsonWithoutCsrf(path, method, body, cookie) {
+  await ensureCsrfToken();
+
+  const headers = {
+    "content-type": "application/json",
+    Origin: "http://localhost:3000",
+    Cookie: withCookies(cookie),
+  };
+  const requestInit = {
+    method,
+    headers,
+    signal: AbortSignal.timeout(10000),
+  };
+
+  if (body) {
+    requestInit.body = JSON.stringify(body);
+  }
+
+  const response = await fetch(`${BASE_URL}${path}`, requestInit);
+  const text = await response.text();
+
+  return {
+    response,
+    payload: text ? JSON.parse(text) : null,
+  };
+}
+
 async function requestGraphQL(query, cookie, queryString = "", extraHeaders = {}, variables) {
-  const headers = { "content-type": "application/json", ...extraHeaders };
+  await ensureCsrfToken();
+
+  const headers = {
+    "content-type": "application/json",
+    Origin: "http://localhost:3000",
+    "x-csrf-token": csrfToken,
+    ...extraHeaders,
+  };
 
   if (cookie) {
-    headers.Cookie = cookie;
+    headers.Cookie = withCookies(cookie);
+  } else {
+    headers.Cookie = csrfCookie;
   }
 
   const response = await fetch(`${BASE_URL}/graphql${queryString}`, {
@@ -69,7 +169,7 @@ async function main() {
       headers: {
         Origin: "http://localhost:3000",
         "Access-Control-Request-Method": "POST",
-        "Access-Control-Request-Headers": "content-type",
+        "Access-Control-Request-Headers": "content-type, x-csrf-token",
       },
     });
 
@@ -97,6 +197,90 @@ async function main() {
     const currentSession = await requestJson("/auth/session", "GET", null, registerCookie);
     assert(currentSession.response.status === 200, "Current session lookup failed");
     assert(currentSession.payload.user.email === email, "Current session returned the wrong user");
+    assert(
+      currentSession.response.headers.get("cache-control")?.includes("no-store"),
+      "Session response is cacheable"
+    );
+
+    const missingCsrfLogout = await requestJsonWithoutCsrf(
+      "/auth/logout",
+      "POST",
+      null,
+      registerCookie
+    );
+    assert(missingCsrfLogout.response.status === 403, "Missing CSRF token was accepted");
+
+    const invalidCsrfLogout = await requestJsonWithCsrfHeader(
+      "/auth/logout",
+      "POST",
+      null,
+      registerCookie,
+      "invalid-csrf-token"
+    );
+    assert(invalidCsrfLogout.response.status === 403, "Invalid CSRF token was accepted");
+
+    const unverifiedBoards = await requestGraphQL(
+      "{ listBoards { id } }",
+      registerCookie
+    );
+    assert(
+      !unverifiedBoards.payload.errors,
+      `Unverified account could not access private workspace: ${JSON.stringify(unverifiedBoards.payload)}`
+    );
+    assert(unverifiedBoards.payload.data?.listBoards?.length > 0, "Unverified account has no private board");
+
+    const boardId = unverifiedBoards.payload.data.listBoards[0].id;
+    const unverifiedNote = await requestGraphQL(
+      `
+      mutation CreatePrivateNote($boardId: ID!) {
+        createNote(boardId: $boardId, title: "Private note", content: "Created before verification") { id }
+      }
+      `,
+      registerCookie,
+      "",
+      {},
+      { boardId }
+    );
+    assert(
+      !unverifiedNote.payload.errors && unverifiedNote.payload.data?.createNote?.id,
+      `Unverified account could not create a private note: ${JSON.stringify(unverifiedNote.payload)}`
+    );
+
+    const unverifiedCollaborators = await requestGraphQL(
+      `query($boardId: ID!) { listBoardCollaborators(boardId: $boardId) { email } }`,
+      registerCookie,
+      "",
+      {},
+      { boardId }
+    );
+    assert(
+      unverifiedCollaborators.payload.data?.listBoardCollaborators == null &&
+        unverifiedCollaborators.payload.errors?.some(
+          (error) => error.extensions?.code === "EMAIL_VERIFICATION_REQUIRED"
+        ),
+      "Unverified account could manage collaborators"
+    );
+
+    const unverifiedShare = await requestGraphQL(
+      `
+      mutation CreateShareLink($boardId: ID!, $permission: BoardPermission!) {
+        createShareLink(boardId: $boardId, permission: $permission)
+      }
+      `,
+      registerCookie,
+      "",
+      {},
+      { boardId, permission: "view" }
+    );
+    assert(
+      unverifiedShare.payload.data?.createShareLink == null &&
+        unverifiedShare.payload.errors?.some(
+        (error) => error.extensions?.code === "EMAIL_VERIFICATION_REQUIRED"
+        ),
+      "Unverified account could create a share link"
+    );
+
+    await pool.query("UPDATE users SET email_verified_at = NOW() WHERE id = $1", [userId]);
 
     const forgedIdentity = await requestGraphQL(
       "{ listBoards { id } }",
@@ -121,7 +305,6 @@ async function main() {
     assert(boards.payload.data.listBoards.length > 0, "Account did not receive an initial board");
     assert(String(boards.payload.data.listBoards[0].ownerId) === String(userId), "Board ownership is not typed to the user");
 
-    const boardId = boards.payload.data.listBoards[0].id;
     assert(boards.payload.data.listBoards[0].shareLinkActive === false, "New board has an active share link");
 
     const viewShare = await requestGraphQL(
@@ -303,6 +486,25 @@ async function main() {
       password: "wrong-password",
     });
     assert(wrongLogin.response.status === 401, "Invalid password was accepted");
+
+    const rateLimitedEmail = `auth-rate-limit-${Date.now()}@example.com`;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const failedLogin = await requestJson("/auth/login", "POST", {
+        email: rateLimitedEmail,
+        password: "wrong-password",
+      });
+      assert(failedLogin.response.status === 401, "Rate-limit setup login unexpectedly succeeded");
+    }
+
+    const rateLimitedLogin = await requestJson("/auth/login", "POST", {
+      email: rateLimitedEmail,
+      password: "wrong-password",
+    });
+    assert(rateLimitedLogin.response.status === 429, "Login rate limit did not trigger");
+    assert(
+      Number(rateLimitedLogin.response.headers.get("retry-after")) > 0,
+      "Rate-limited login did not include Retry-After"
+    );
 
     console.log(
       JSON.stringify(

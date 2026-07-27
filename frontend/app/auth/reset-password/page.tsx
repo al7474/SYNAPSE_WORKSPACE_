@@ -11,6 +11,30 @@ const INPUT_CLASS_NAME =
 const SUBMIT_CLASS_NAME =
   "h-[42px] w-full rounded-none border border-white/10 bg-transparent px-[17px] py-[13px] font-mono text-[12px] font-normal uppercase leading-4 tracking-[0.6px] text-[#fafafa] shadow-none hover:bg-white/5";
 
+function readAndClearActionToken(): string {
+  const url = new URL(window.location.href);
+  const fragmentParameters = new URLSearchParams(url.hash.slice(1));
+  const queryToken = url.searchParams.get("token")?.trim() || "";
+  const fragmentToken = fragmentParameters.get("token")?.trim() || "";
+  const token = fragmentToken || queryToken;
+
+  if (url.searchParams.has("token")) {
+    url.searchParams.delete("token");
+  }
+
+  if (fragmentParameters.has("token")) {
+    fragmentParameters.delete("token");
+    const nextHash = fragmentParameters.toString();
+    url.hash = nextHash ? `#${nextHash}` : "";
+  }
+
+  if (url.href !== window.location.href) {
+    window.history.replaceState(window.history.state, document.title, url.toString());
+  }
+
+  return token;
+}
+
 export default function ResetPasswordPage() {
   const [token, setToken] = useState("");
   const [password, setPassword] = useState("");
@@ -20,7 +44,7 @@ export default function ResetPasswordPage() {
   const [isComplete, setIsComplete] = useState(false);
 
   useEffect(() => {
-    setToken(new URLSearchParams(window.location.search).get("token")?.trim() || "");
+    setToken(readAndClearActionToken());
   }, []);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {

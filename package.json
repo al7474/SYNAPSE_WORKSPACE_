@@ -14,7 +14,7 @@
     "dev:backend": "pnpm --filter @synapse/backend dev",
     "dev:frontend": "pnpm --filter @synapse/frontend dev",
     "build": "pnpm -r --filter @synapse/* build",
-    "test": "echo \"No unit tests configured yet\"",
+    "test": "pnpm --filter @synapse/backend test",
     "smoke:embedding": "node --env-file=.env scripts/smoke/openrouter-embedding.js",
     "smoke:embedding:db": "node --env-file=.env scripts/smoke/openrouter-pgvector-e2e.js",
     "smoke:embedding:db:local": "node scripts/smoke/run-local-pgvector-e2e.js",
@@ -32,7 +32,7 @@
     "verify:env-templates": "node scripts/security/verify-env-templates.mjs",
     "secrets:scan": "node scripts/security/scan-secrets.mjs",
     "hooks:install": "node scripts/security/install-git-hooks.mjs",
-    "ci:check": "pnpm verify:env-templates && pnpm secrets:scan && pnpm build"
+    "ci:check": "pnpm verify:env-templates && pnpm secrets:scan && pnpm test && pnpm build"
   },
   "keywords": [],
   "author": "",

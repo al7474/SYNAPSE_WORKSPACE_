@@ -21,9 +21,59 @@ function requireEnv(name: string): string {
   return value;
 }
 
+function readBoolean(name: string, fallback: boolean): boolean {
+  const value = process.env[name];
+
+  if (value === undefined || value === "") {
+    return fallback;
+  }
+
+  if (value === "true") {
+    return true;
+  }
+
+  if (value === "false") {
+    return false;
+  }
+
+  throw new Error(`${name} must be either true or false`);
+}
+
+function readPositiveInteger(name: string, fallback: number): number {
+  const value = process.env[name];
+
+  if (value === undefined || value === "") {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+
+  return parsed;
+}
+
+function assertHttpsUrl(name: string, value: string): void {
+  let parsed: URL;
+
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`${name} must be a valid URL`);
+  }
+
+  if (parsed.protocol !== "https:") {
+    throw new Error(`${name} must use HTTPS in production`);
+  }
+}
+
 const port = Number(process.env.PORT || 4000);
 const isProduction = process.env.NODE_ENV === "production";
 const frontendOrigin = process.env.FRONTEND_ORIGIN || "http://localhost:3000";
+const authPublicUrl = process.env.AUTH_PUBLIC_URL || `http://localhost:${port}`;
+const authFrontendUrl = process.env.AUTH_FRONTEND_URL || frontendOrigin;
 
 function readAuthEmailProvider(): AuthEmailProvider {
   const value = process.env.AUTH_EMAIL_PROVIDER || (isProduction ? "resend" : "console");
@@ -36,6 +86,16 @@ function readAuthEmailProvider(): AuthEmailProvider {
 }
 
 const authEmailProvider = readAuthEmailProvider();
+
+if (isProduction) {
+  assertHttpsUrl("FRONTEND_ORIGIN", frontendOrigin);
+  assertHttpsUrl("AUTH_PUBLIC_URL", authPublicUrl);
+  assertHttpsUrl("AUTH_FRONTEND_URL", authFrontendUrl);
+
+  if (authEmailProvider === "console") {
+    throw new Error("AUTH_EMAIL_PROVIDER=console is not allowed in production");
+  }
+}
 
 export const env = {
   port,
@@ -56,9 +116,14 @@ export const env = {
   authActionTokenTtlMs: Number(process.env.AUTH_ACTION_TOKEN_TTL_MS || 3600000),
   authCleanupIntervalMs: Number(process.env.AUTH_CLEANUP_INTERVAL_MS || 3600000),
   authBcryptCost: Number(process.env.AUTH_BCRYPT_COST || 12),
-  authPublicUrl: process.env.AUTH_PUBLIC_URL || `http://localhost:${port}`,
-  authFrontendUrl: process.env.AUTH_FRONTEND_URL || frontendOrigin,
+  authPublicUrl,
+  authFrontendUrl,
   authEmailProvider,
   authEmailFrom: process.env.AUTH_EMAIL_FROM || "",
   resendApiKey: process.env.RESEND_API_KEY || "",
+  authRateLimitEnabled: readBoolean("AUTH_RATE_LIMIT_ENABLED", true),
+  authRateLimitMaxKeys: readPositiveInteger("AUTH_RATE_LIMIT_MAX_KEYS", 10_000),
+  authBodyMaxBytes: readPositiveInteger("AUTH_BODY_MAX_BYTES", 16_384),
+  authCsrfEnabled: readBoolean("AUTH_CSRF_ENABLED", true),
+  trustProxy: readBoolean("TRUST_PROXY", false),
 };

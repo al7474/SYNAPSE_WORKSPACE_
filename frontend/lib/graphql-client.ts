@@ -1,6 +1,9 @@
 const GRAPHQL_ENDPOINT =
   process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT || "http://localhost:4000/graphql";
 
+let csrfToken: string | null = null;
+let csrfRequest: Promise<string> | null = null;
+
 type GraphQLErrorPayload = {
   message: string;
 };
@@ -10,12 +13,48 @@ type GraphQLResponse<T> = {
   errors?: GraphQLErrorPayload[];
 };
 
+async function getCsrfToken(): Promise<string> {
+  if (csrfToken) {
+    return csrfToken;
+  }
+
+  if (!csrfRequest) {
+    const csrfEndpoint = new URL("/auth/csrf", GRAPHQL_ENDPOINT).toString();
+
+    csrfRequest = fetch(csrfEndpoint, {
+      method: "GET",
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error("Unable to initialize secure session");
+        }
+
+        const payload = (await response.json()) as { csrfToken?: string };
+
+        if (!payload.csrfToken) {
+          throw new Error("Unable to initialize secure session");
+        }
+
+        csrfToken = payload.csrfToken;
+        return payload.csrfToken;
+      })
+      .finally(() => {
+        csrfRequest = null;
+      });
+  }
+
+  return csrfRequest;
+}
+
 export async function graphQLRequest<T>(
   query: string,
   variables?: Record<string, unknown>
 ): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    "X-CSRF-Token": await getCsrfToken(),
   };
 
   const response = await fetch(GRAPHQL_ENDPOINT, {

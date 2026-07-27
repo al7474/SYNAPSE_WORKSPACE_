@@ -43,4 +43,5 @@ export type SessionState = {
   sessionId: string;
   sessionMode: SessionMode;
   userEmail: string | null;
+  emailVerified: boolean;
 };

@@ -2,6 +2,7 @@
 
 import { Search } from "lucide-react";
 import type { ComponentProps } from "react";
+import { EmailVerificationBanner } from "@/components/auth/email-verification-banner";
 import { DeleteNoteDialog } from "@/components/workspace/delete-note-dialog";
 import { ToastViewport } from "@/components/workspace/toast-viewport";
 import { WorkspaceContent } from "@/components/workspace/workspace-content";
@@ -9,6 +10,7 @@ import { WorkspaceHeader } from "@/components/workspace/workspace-header";
 import { WorkspaceSidebar } from "@/components/workspace/workspace-sidebar";
 
 type WorkspaceShellProps = {
+  emailVerification?: ComponentProps<typeof EmailVerificationBanner>;
   header: ComponentProps<typeof WorkspaceHeader>;
   sidebar: ComponentProps<typeof WorkspaceSidebar>;
   content: ComponentProps<typeof WorkspaceContent>;
@@ -16,10 +18,11 @@ type WorkspaceShellProps = {
   toasts: ComponentProps<typeof ToastViewport>["toasts"];
 };
 
-export function WorkspaceShell({ header, sidebar, content, deleteDialog, toasts }: WorkspaceShellProps) {
+export function WorkspaceShell({ emailVerification, header, sidebar, content, deleteDialog, toasts }: WorkspaceShellProps) {
   return (
     <main className="flex min-h-screen min-w-0 flex-col overflow-x-hidden bg-[#0a0a0a] font-mono text-[#fafafa]">
       <WorkspaceHeader {...header} />
+      {emailVerification && <EmailVerificationBanner {...emailVerification} />}
 
       <div className="shrink-0 border-b border-[rgba(255,255,255,0.1)] px-4 pb-[13px] pt-3">
         <div className="flex h-[42px] items-center gap-3 border border-[rgba(255,255,255,0.1)] bg-[rgba(23,23,23,0.4)] px-[17px]">

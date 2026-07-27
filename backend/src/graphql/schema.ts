@@ -1,4 +1,5 @@
 import { createSchema } from "graphql-yoga";
+import { GraphQLError } from "graphql";
 import type { OwnerMetadata } from "../modules/auth/auth.types.js";
 import type { NotesService } from "../modules/notes/notes.service.js";
 import type { BoardPermission, Note } from "../modules/notes/notes.types.js";
@@ -7,6 +8,7 @@ interface GraphQLContext {
   notesService: NotesService;
   sessionId: string | null;
   userEmail: string | null;
+  emailVerified: boolean;
   ownerMetadata: OwnerMetadata;
   revalidateSession: () => Promise<boolean>;
 }
@@ -43,6 +45,18 @@ export function buildSchema(pubSub: NoteUpdatedPubSub) {
     }
 
     return ctx.sessionId;
+  }
+
+  function requireVerifiedEmail(ctx: GraphQLContext): string {
+    const sessionId = requireSessionId(ctx);
+
+    if (ctx.ownerMetadata.ownerKind === "user" && !ctx.emailVerified) {
+      throw new GraphQLError("Email verification required.", {
+        extensions: { code: "EMAIL_VERIFICATION_REQUIRED" },
+      });
+    }
+
+    return sessionId;
   }
 
   return createSchema<GraphQLContext>({
@@ -127,7 +141,7 @@ export function buildSchema(pubSub: NoteUpdatedPubSub) {
           );
         },
         listBoardCollaborators: async (_parent, args, ctx) => {
-          const sessionId = requireSessionId(ctx);
+          const sessionId = requireVerifiedEmail(ctx);
           return ctx.notesService.listBoardCollaborators(sessionId, args.boardId, ctx.ownerMetadata);
         },
         accessSharedBoard: async (_parent, args, ctx) => {
@@ -174,7 +188,7 @@ export function buildSchema(pubSub: NoteUpdatedPubSub) {
           return ctx.notesService.deleteBoard(sessionId, args.id, ctx.ownerMetadata);
         },
         setBoardCollaborator: async (_parent, args, ctx) => {
-          const sessionId = requireSessionId(ctx);
+          const sessionId = requireVerifiedEmail(ctx);
           return ctx.notesService.setBoardCollaborator(
             sessionId,
             args.boardId,
@@ -184,7 +198,7 @@ export function buildSchema(pubSub: NoteUpdatedPubSub) {
           );
         },
         removeBoardCollaborator: async (_parent, args, ctx) => {
-          const sessionId = requireSessionId(ctx);
+          const sessionId = requireVerifiedEmail(ctx);
           return ctx.notesService.removeBoardCollaborator(
             sessionId,
             args.boardId,
@@ -193,7 +207,7 @@ export function buildSchema(pubSub: NoteUpdatedPubSub) {
           );
         },
         createShareLink: async (_parent, args, ctx) => {
-          const sessionId = requireSessionId(ctx);
+          const sessionId = requireVerifiedEmail(ctx);
           return ctx.notesService.createShareLink(
             sessionId,
             args.boardId,
@@ -202,7 +216,7 @@ export function buildSchema(pubSub: NoteUpdatedPubSub) {
           );
         },
         revokeShareLink: async (_parent, args, ctx) => {
-          const sessionId = requireSessionId(ctx);
+          const sessionId = requireVerifiedEmail(ctx);
           return ctx.notesService.revokeShareLink(sessionId, args.boardId, ctx.ownerMetadata);
         },
         createNote: async (_parent, args, ctx) => {

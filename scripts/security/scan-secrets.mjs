@@ -40,7 +40,8 @@ const highRiskPatterns = [
   },
   {
     name: "Generic API key assignment",
-    regex: /(?:API[_-]?KEY|TOKEN|SECRET)\s*[=:]\s*["']?[A-Za-z0-9_\-]{20,}["']?/i,
+    regex:
+      /(?:API[_-]?KEY|TOKEN|SECRET)\s*[=:]\s*(?:"[A-Za-z0-9_\-]{20,}"|'[A-Za-z0-9_\-]{20,}'|[A-Za-z0-9_\-]{20,}(?=\s*(?:[,;]|$)))/i,
   },
   {
     name: "Private key block",

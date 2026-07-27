@@ -41,6 +41,18 @@ type PasswordResetResponse = {
   message: string;
 };
 
+type EmailVerificationRequestResponse = {
+  alreadyVerified: boolean;
+  emailSent: boolean;
+};
+
+type CsrfResponse = {
+  csrfToken: string;
+};
+
+let csrfToken: string | null = null;
+let csrfRequest: Promise<string> | null = null;
+
 function getBackendOrigin(): string {
   const baseUrl = typeof window === "undefined" ? "http://localhost:3000" : window.location.origin;
   return new URL(GRAPHQL_ENDPOINT, baseUrl).origin;
@@ -70,11 +82,44 @@ async function parseResponse<T>(response: Response, fallbackMessage: string): Pr
   return payload as T;
 }
 
+async function getCsrfToken(): Promise<string> {
+  if (csrfToken) {
+    return csrfToken;
+  }
+
+  if (!csrfRequest) {
+    csrfRequest = fetch(getAuthEndpoint("/auth/csrf"), {
+      method: "GET",
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    })
+      .then((response) => parseResponse<CsrfResponse>(response, "Unable to initialize secure session"))
+      .then((payload) => {
+        csrfToken = payload.csrfToken;
+        return payload.csrfToken;
+      })
+      .finally(() => {
+        csrfRequest = null;
+      });
+  }
+
+  return csrfRequest;
+}
+
+async function fetchWithCsrf(input: RequestInfo | URL, init: RequestInit): Promise<Response> {
+  const token = await getCsrfToken();
+  const headers = new Headers(init.headers);
+  headers.set("X-CSRF-Token", token);
+
+  return fetch(input, { ...init, headers });
+}
+
 function toAccountSessionState(payload: AccountSessionResponse): SessionState {
   return {
     sessionId: payload.sessionId,
     sessionMode: payload.sessionMode,
     userEmail: payload.user.email,
+    emailVerified: payload.user.emailVerified,
   };
 }
 
@@ -114,6 +159,7 @@ export async function currentSession(mode?: SessionMode): Promise<SessionState |
       sessionId: payload.sessionId,
       sessionMode: payload.sessionMode,
       userEmail: payload.userEmail,
+      emailVerified: false,
     };
   }
 
@@ -125,7 +171,7 @@ export async function currentSession(mode?: SessionMode): Promise<SessionState |
 }
 
 export async function createGuestSession(): Promise<SessionState> {
-  const response = await fetch(getGuestSessionEndpoint(), {
+  const response = await fetchWithCsrf(getGuestSessionEndpoint(), {
     method: "POST",
     credentials: "include",
     headers: { Accept: "application/json" },
@@ -141,6 +187,7 @@ export async function createGuestSession(): Promise<SessionState> {
     sessionId: payload.sessionId,
     sessionMode: payload.sessionMode,
     userEmail: payload.userEmail,
+    emailVerified: false,
   };
 }
 
@@ -149,7 +196,7 @@ export async function registerAccount(
   email: string,
   password: string
 ): Promise<{ session: SessionState; verificationEmailSent: boolean }> {
-  const response = await fetch(getAuthEndpoint("/auth/register"), {
+  const response = await fetchWithCsrf(getAuthEndpoint("/auth/register"), {
     method: "POST",
     credentials: "include",
     headers: {
@@ -167,7 +214,7 @@ export async function registerAccount(
 }
 
 export async function loginAccount(email: string, password: string): Promise<SessionState> {
-  const response = await fetch(getAuthEndpoint("/auth/login"), {
+  const response = await fetchWithCsrf(getAuthEndpoint("/auth/login"), {
     method: "POST",
     credentials: "include",
     headers: {
@@ -182,7 +229,7 @@ export async function loginAccount(email: string, password: string): Promise<Ses
 }
 
 export async function logoutAccount(): Promise<void> {
-  const response = await fetch(getAuthEndpoint("/auth/logout"), {
+  const response = await fetchWithCsrf(getAuthEndpoint("/auth/logout"), {
     method: "POST",
     credentials: "include",
     headers: { Accept: "application/json" },
@@ -192,7 +239,7 @@ export async function logoutAccount(): Promise<void> {
 }
 
 export async function requestPasswordReset(email: string): Promise<PasswordResetResponse> {
-  const response = await fetch(getAuthEndpoint("/auth/password-reset/request"), {
+  const response = await fetchWithCsrf(getAuthEndpoint("/auth/password-reset/request"), {
     method: "POST",
     credentials: "include",
     headers: {
@@ -205,21 +252,35 @@ export async function requestPasswordReset(email: string): Promise<PasswordReset
   return parseResponse<PasswordResetResponse>(response, "Unable to request password recovery");
 }
 
-export async function verifyEmail(token: string): Promise<VerifyEmailResponse> {
-  const url = new URL(getAuthEndpoint("/auth/verify-email"));
-  url.searchParams.set("token", token);
-
-  const response = await fetch(url, {
-    method: "GET",
+export async function requestEmailVerification(): Promise<EmailVerificationRequestResponse> {
+  const response = await fetchWithCsrf(getAuthEndpoint("/auth/email-verification/request"), {
+    method: "POST",
     credentials: "include",
     headers: { Accept: "application/json" },
+  });
+
+  return parseResponse<EmailVerificationRequestResponse>(
+    response,
+    "Unable to request email verification"
+  );
+}
+
+export async function verifyEmail(token: string): Promise<VerifyEmailResponse> {
+  const response = await fetchWithCsrf(getAuthEndpoint("/auth/verify-email"), {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ token }),
   });
 
   return parseResponse<VerifyEmailResponse>(response, "Unable to verify email");
 }
 
 export async function resetPassword(token: string, password: string): Promise<void> {
-  const response = await fetch(getAuthEndpoint("/auth/password-reset/confirm"), {
+  const response = await fetchWithCsrf(getAuthEndpoint("/auth/password-reset/confirm"), {
     method: "POST",
     credentials: "include",
     headers: {
@@ -233,7 +294,7 @@ export async function resetPassword(token: string, password: string): Promise<vo
 }
 
 export async function deleteGuestSession(): Promise<void> {
-  const response = await fetch(getGuestSessionEndpoint(), {
+  const response = await fetchWithCsrf(getGuestSessionEndpoint(), {
     method: "DELETE",
     credentials: "include",
     headers: { Accept: "application/json" },

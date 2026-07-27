@@ -11,6 +11,7 @@ type WorkspaceSidebarProps = {
   activeBoardId: string;
   sessionId: string;
   sessionMode: SessionMode;
+  canManageSharing: boolean;
   currentUserEmail: string | null;
   isSidebarOpen: boolean;
   isCreatingBoard: boolean;
@@ -24,6 +25,7 @@ type WorkspaceSidebarProps = {
   onCopyShareLink: (board: Board) => void | Promise<void>;
   onRevokeShareLink: (board: Board) => void | Promise<void>;
   onShowBoardAccess: (board: Board) => void;
+  onVerificationRequired: () => void;
   onCreateBoard: () => void | Promise<void>;
   onDeleteDemoWorkspace: () => void | Promise<void>;
 };
@@ -33,6 +35,7 @@ export function WorkspaceSidebar({
   activeBoardId,
   sessionId,
   sessionMode,
+  canManageSharing,
   currentUserEmail,
   isSidebarOpen,
   isCreatingBoard,
@@ -46,6 +49,7 @@ export function WorkspaceSidebar({
   onCopyShareLink,
   onRevokeShareLink,
   onShowBoardAccess,
+  onVerificationRequired,
   onCreateBoard,
   onDeleteDemoWorkspace,
 }: WorkspaceSidebarProps) {
@@ -56,6 +60,12 @@ export function WorkspaceSidebar({
 
   const openShareDialog = (board: Board) => {
     setOpenBoardMenuId(null);
+
+    if (!canManageSharing) {
+      onVerificationRequired();
+      return;
+    }
+
     setShareTargetBoard(board);
     setSharePermission(board.shareLinkActive ? board.sharePermission : "view");
   };
@@ -156,10 +166,14 @@ export function WorkspaceSidebar({
 
                         <button
                           type="button"
-                          className="flex w-full items-center gap-2 px-2 py-2 text-left text-[10px] uppercase tracking-[0.45px] text-[#a1a1a1] hover:bg-[#262626] hover:text-[#fafafa]"
+                          className={`flex w-full items-center gap-2 px-2 py-2 text-left text-[10px] uppercase tracking-[0.45px] ${canManageSharing ? "text-[#a1a1a1] hover:bg-[#262626] hover:text-[#fafafa]" : "text-[#737373]"}`}
                           onClick={() => {
                             setOpenBoardMenuId(null);
-                            onShowBoardAccess(board);
+                            if (canManageSharing) {
+                              onShowBoardAccess(board);
+                            } else {
+                              onVerificationRequired();
+                            }
                             onClose();
                           }}
                           role="menuitem"
@@ -169,7 +183,7 @@ export function WorkspaceSidebar({
                         </button>
                         <button
                           type="button"
-                          className="flex w-full items-center gap-2 px-2 py-2 text-left text-[10px] uppercase tracking-[0.45px] text-[#a1a1a1] hover:bg-[#262626] hover:text-[#fafafa]"
+                          className={`flex w-full items-center gap-2 px-2 py-2 text-left text-[10px] uppercase tracking-[0.45px] ${canManageSharing ? "text-[#a1a1a1] hover:bg-[#262626] hover:text-[#fafafa]" : "text-[#737373]"}`}
                           onClick={() => openShareDialog(board)}
                           role="menuitem"
                         >
@@ -182,7 +196,11 @@ export function WorkspaceSidebar({
                             className="flex w-full items-center gap-2 px-2 py-2 text-left text-[10px] uppercase tracking-[0.45px] text-[#a1a1a1] hover:bg-[#262626] hover:text-[#fca5a5]"
                             onClick={() => {
                               setOpenBoardMenuId(null);
-                              void onRevokeShareLink(board);
+                              if (canManageSharing) {
+                                void onRevokeShareLink(board);
+                              } else {
+                                onVerificationRequired();
+                              }
                             }}
                             role="menuitem"
                           >
@@ -197,7 +215,11 @@ export function WorkspaceSidebar({
                               className="inline-flex items-center gap-1.5 border border-[rgba(255,255,255,0.1)] px-2 py-1.5 text-[10px] uppercase tracking-[0.45px] text-[#a1a1a1] hover:border-[#737373] hover:text-[#fafafa]"
                               onClick={() => {
                                 setOpenBoardMenuId(null);
-                                void onCopyShareLink(board);
+                                if (canManageSharing) {
+                                  void onCopyShareLink(board);
+                                } else {
+                                  onVerificationRequired();
+                                }
                               }}
                               role="menuitem"
                               aria-label="Copy share link"

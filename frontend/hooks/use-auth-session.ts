@@ -9,6 +9,7 @@ import {
   loginAccount,
   logoutAccount,
   registerAccount,
+  requestEmailVerification,
   requestPasswordReset,
 } from "@/lib/session";
 import type { AuthMode, SessionMode, SessionState, ToastKind } from "@/types/workspace";
@@ -22,6 +23,7 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
   const [sessionId, setSessionId] = useState("");
   const [sessionMode, setSessionMode] = useState<SessionMode | null>(null);
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
+  const [emailVerified, setEmailVerified] = useState(false);
   const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [authName, setAuthName] = useState("");
   const [authEmail, setAuthEmail] = useState("");
@@ -36,6 +38,7 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
     setSessionId("");
     setSessionMode(null);
     setCurrentUserEmail(null);
+    setEmailVerified(false);
     setAuthMode("login");
     setAuthName("");
     setAuthEmail("");
@@ -48,7 +51,49 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
     setSessionId(session.sessionId);
     setSessionMode(session.sessionMode);
     setCurrentUserEmail(session.userEmail);
+    setEmailVerified(session.emailVerified);
   }, []);
+
+  const checkEmailVerification = useCallback(async (): Promise<void> => {
+    const session = await currentSession("user");
+
+    if (!session) {
+      clearLocalSession();
+      return;
+    }
+
+    activateSession(session);
+  }, [activateSession, clearLocalSession]);
+
+  const handleRequestEmailVerification = useCallback(async (): Promise<void> => {
+    setAuthError("");
+    setIsSigningIn(true);
+
+    try {
+      const result = await requestEmailVerification();
+
+      if (result.alreadyVerified) {
+        await checkEmailVerification();
+        return;
+      }
+
+      if (result.emailSent) {
+        onStatusChange("Verification email sent");
+        pushToast("success", "A new verification email has been sent");
+      } else {
+        setAuthError("The verification email could not be sent. Please try again later.");
+        onStatusChange("Verification email delivery failed");
+        pushToast("error", "The verification email could not be sent");
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to request email verification";
+      setAuthError(message);
+      onStatusChange(message);
+      pushToast("error", message);
+    } finally {
+      setIsSigningIn(false);
+    }
+  }, [checkEmailVerification, onStatusChange, pushToast]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -286,6 +331,7 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
     sessionId,
     sessionMode,
     currentUserEmail,
+    emailVerified,
     authMode,
     authName,
     authEmail,
@@ -304,6 +350,8 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
     handleSignIn,
     handleRegister,
     handleForgotPassword,
+    handleRequestEmailVerification,
+    checkEmailVerification,
     clearSession,
   };
 }

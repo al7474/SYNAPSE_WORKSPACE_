@@ -1,4 +1,4 @@
-import { createServer, type ServerResponse } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createPubSub, createYoga } from "graphql-yoga";
 import { Pool } from "pg";
 import { env } from "./config/env.js";
@@ -18,6 +18,11 @@ import {
   readAuthSessionToken,
 } from "./modules/auth/auth-http.js";
 import { AuthService } from "./modules/auth/auth.service.js";
+import {
+  createRateLimitKey,
+  InMemoryRateLimiter,
+} from "./modules/auth/rate-limit.service.js";
+import { CSRF_HEADER_NAME, isCsrfTokenValid } from "./modules/auth/csrf.service.js";
 import { NotesService } from "./modules/notes/notes.service.js";
 import type { Note } from "./modules/notes/notes.types.js";
 
@@ -30,22 +35,81 @@ function setAuthCorsHeaders(request: Request, response: ServerResponse): void {
   if (!requestOrigin || requestOrigin === env.frontendOrigin) {
     response.setHeader("Access-Control-Allow-Origin", env.frontendOrigin);
     response.setHeader("Access-Control-Allow-Credentials", "true");
-    response.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    response.setHeader("Access-Control-Allow-Headers", "Content-Type, X-CSRF-Token");
     response.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
     response.setHeader("Vary", "Origin");
+  }
+}
+
+function hasTrustedOrigin(request: Request, expectedOrigin: string): boolean {
+  const requestOrigin = request.headers.get("origin");
+
+  if (requestOrigin) {
+    return requestOrigin === expectedOrigin;
+  }
+
+  const referer = request.headers.get("referer");
+
+  if (!referer) {
+    return false;
+  }
+
+  try {
+    return new URL(referer).origin === expectedOrigin;
+  } catch {
+    return false;
   }
 }
 
 function sendJson(response: ServerResponse, statusCode: number, payload: unknown): void {
   response.statusCode = statusCode;
   response.setHeader("Content-Type", "application/json; charset=utf-8");
+  response.setHeader("Cache-Control", "no-store");
+  response.setHeader("Pragma", "no-cache");
+  response.setHeader("Expires", "0");
   response.end(JSON.stringify(payload));
+}
+
+function setSecurityHeaders(response: ServerResponse, isProduction: boolean): void {
+  response.setHeader("Cache-Control", "no-store");
+  response.setHeader("Pragma", "no-cache");
+  response.setHeader("Expires", "0");
+  response.setHeader("X-Content-Type-Options", "nosniff");
+  response.setHeader("X-Frame-Options", "DENY");
+  response.setHeader("Referrer-Policy", "no-referrer");
+
+  if (isProduction) {
+    response.setHeader(
+      "Strict-Transport-Security",
+      "max-age=31536000; includeSubDomains"
+    );
+  }
+}
+
+function getClientIp(request: IncomingMessage, trustProxy: boolean): string {
+  if (trustProxy) {
+    const forwardedFor = request.headers["x-forwarded-for"];
+
+    if (typeof forwardedFor === "string" && forwardedFor.trim()) {
+      return forwardedFor.split(",")[0].trim();
+    }
+  }
+
+  return request.socket.remoteAddress || "unknown";
 }
 
 async function handleGuestSessionRequest(
   request: Request,
   response: ServerResponse,
-  guestSessions: GuestSessionService
+  dependencies: {
+    guestSessions: GuestSessionService;
+    rateLimiter: InMemoryRateLimiter;
+    rateLimitEnabled: boolean;
+    clientIp: string;
+    csrfEnabled: boolean;
+    isProduction: boolean;
+    frontendOrigin: string;
+  }
 ): Promise<void> {
   setAuthCorsHeaders(request, response);
 
@@ -57,9 +121,29 @@ async function handleGuestSessionRequest(
 
   const guestSessionCookieValue = readGuestSessionToken(request);
 
+  if (
+    dependencies.isProduction &&
+    request.method !== "GET" &&
+    request.method !== "HEAD" &&
+    !hasTrustedOrigin(request, dependencies.frontendOrigin)
+  ) {
+    sendJson(response, 403, { error: "Request origin is not allowed" });
+    return;
+  }
+
+  if (
+    dependencies.csrfEnabled &&
+    request.method !== "GET" &&
+    request.method !== "HEAD" &&
+    !isCsrfTokenValid(request.headers.get("cookie"), request.headers.get(CSRF_HEADER_NAME))
+  ) {
+    sendJson(response, 403, { error: "Invalid CSRF token" });
+    return;
+  }
+
   if (request.method === "GET") {
     const session = guestSessionCookieValue
-      ? await guestSessions.resolve(guestSessionCookieValue)
+      ? await dependencies.guestSessions.resolve(guestSessionCookieValue)
       : null;
 
     if (!session) {
@@ -77,7 +161,21 @@ async function handleGuestSessionRequest(
   }
 
   if (request.method === "POST") {
-    const session = await guestSessions.createOrReuse(guestSessionCookieValue);
+    if (dependencies.rateLimitEnabled) {
+      const decision = dependencies.rateLimiter.check(
+        createRateLimitKey("auth:guest-session:ip", dependencies.clientIp),
+        20,
+        60 * 60 * 1000
+      );
+
+      if (!decision.allowed) {
+        response.setHeader("Retry-After", String(decision.retryAfterSeconds));
+        sendJson(response, 429, { error: "Too many requests. Please try again later." });
+        return;
+      }
+    }
+
+    const session = await dependencies.guestSessions.createOrReuse(guestSessionCookieValue);
     const maxAgeSeconds = Math.max(1, Math.floor((session.expiresAt.getTime() - Date.now()) / 1000));
 
     response.setHeader(
@@ -95,7 +193,7 @@ async function handleGuestSessionRequest(
 
   if (request.method === "DELETE") {
     if (guestSessionCookieValue) {
-      await guestSessions.revoke(guestSessionCookieValue);
+      await dependencies.guestSessions.revoke(guestSessionCookieValue);
     }
 
     response.setHeader("Set-Cookie", clearGuestSessionCookie(env.isProduction));
@@ -109,6 +207,7 @@ async function handleGuestSessionRequest(
 
 async function bootstrap() {
   const pool = new Pool({ connectionString: env.databaseUrl });
+  const rateLimiter = new InMemoryRateLimiter(env.authRateLimitMaxKeys);
   const pubSub = createPubSub<{ NOTE_UPDATED: [Note] }>();
   const embeddingsService = new OpenRouterEmbeddingsService(
     env.openRouterApiKey,
@@ -148,6 +247,7 @@ async function bootstrap() {
           notesService,
           sessionId: authSession?.user.id ?? null,
           userEmail: authSession?.user.email ?? null,
+          emailVerified: Boolean(authSession?.user.emailVerifiedAt),
           ownerMetadata: authSession
             ? { ownerKind: "user", ownerUserId: authSession.user.id }
             : { ownerKind: "legacy" },
@@ -168,6 +268,7 @@ async function bootstrap() {
           notesService,
           sessionId: guestSession?.ownerId ?? null,
           userEmail: null as string | null,
+          emailVerified: false,
           ownerMetadata,
           revalidateSession: async () =>
             Boolean(await guestSessions.resolve(guestSessionCookieValue)),
@@ -180,6 +281,7 @@ async function bootstrap() {
         notesService,
         sessionId: null,
         userEmail: null as string | null,
+        emailVerified: false,
         ownerMetadata,
         revalidateSession: async () => false,
       };
@@ -187,12 +289,13 @@ async function bootstrap() {
     cors: {
       origin: env.frontendOrigin,
       credentials: true,
-      allowedHeaders: ["Content-Type"],
+      allowedHeaders: ["Content-Type", "X-CSRF-Token"],
     },
     graphiql: !env.isProduction,
   });
 
   const server = createServer((request, response) => {
+    setSecurityHeaders(response, env.isProduction);
     const requestUrl = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
 
     if (requestUrl.pathname === GUEST_SESSION_PATH || AUTH_PATH_SET.has(requestUrl.pathname)) {
@@ -219,12 +322,35 @@ async function bootstrap() {
         return;
       }
 
+      if (
+        env.isProduction &&
+        webRequest.method !== "GET" &&
+        webRequest.method !== "HEAD" &&
+        !hasTrustedOrigin(webRequest, env.frontendOrigin)
+      ) {
+        sendJson(response, 403, { error: "Request origin is not allowed" });
+        return;
+      }
+
       const handler = requestUrl.pathname === GUEST_SESSION_PATH
-        ? handleGuestSessionRequest(webRequest, response, guestSessions)
+        ? handleGuestSessionRequest(webRequest, response, {
+            guestSessions,
+            rateLimiter,
+            rateLimitEnabled: env.authRateLimitEnabled,
+            clientIp: getClientIp(request, env.trustProxy),
+            csrfEnabled: env.authCsrfEnabled,
+            isProduction: env.isProduction,
+            frontendOrigin: env.frontendOrigin,
+          })
         : handleAuthRequest(webRequest, response, {
             authService,
             emailService: authEmailService,
             isProduction: env.isProduction,
+            rateLimiter,
+            rateLimitEnabled: env.authRateLimitEnabled,
+            clientIp: getClientIp(request, env.trustProxy),
+            maxBodyBytes: env.authBodyMaxBytes,
+            csrfEnabled: env.authCsrfEnabled,
           });
 
       void handler.catch((error) => {
@@ -237,6 +363,34 @@ async function bootstrap() {
         }
       });
       return;
+    }
+
+    if (
+      env.isProduction &&
+      request.method === "POST" &&
+      !hasTrustedOrigin(
+        new Request(`http://${request.headers.host || "localhost"}${request.url || "/"}`, {
+          method: "POST",
+          headers: request.headers as HeadersInit,
+        }),
+        env.frontendOrigin
+      )
+    ) {
+      sendJson(response, 403, { error: "Request origin is not allowed" });
+      return;
+    }
+
+    if (
+      env.authCsrfEnabled &&
+      request.method === "POST"
+    ) {
+      const csrfHeader = request.headers[CSRF_HEADER_NAME];
+      const csrfHeaderValue = Array.isArray(csrfHeader) ? csrfHeader[0] : csrfHeader;
+
+      if (!isCsrfTokenValid(request.headers.cookie, csrfHeaderValue)) {
+        sendJson(response, 403, { error: "Invalid CSRF token" });
+        return;
+      }
     }
 
     void yoga(request, response);
@@ -311,6 +465,7 @@ async function bootstrap() {
 
       try {
         await authService.purgeExpired();
+        rateLimiter.purgeExpired();
       } catch (error) {
         console.error("Authentication cleanup error:", error);
       } finally {

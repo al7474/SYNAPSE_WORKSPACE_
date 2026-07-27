@@ -13,6 +13,7 @@ import type {
 
 type UseBoardsOptions = {
   sessionId: string;
+  canManageSharing: boolean;
   onStatusChange: (status: string) => void;
   pushToast: (kind: ToastKind, message: string) => void;
 };
@@ -35,7 +36,7 @@ function clearShareTokenFromLocation(): void {
   window.history.replaceState(window.history.state, document.title, nextUrl);
 }
 
-export function useBoards({ sessionId, onStatusChange, pushToast }: UseBoardsOptions) {
+export function useBoards({ sessionId, canManageSharing, onStatusChange, pushToast }: UseBoardsOptions) {
   const [boards, setBoards] = useState<Board[]>([]);
   const [activeBoardId, setActiveBoardId] = useState("");
   const [activeShareToken, setActiveShareToken] = useState<string | null>(null);
@@ -101,7 +102,7 @@ export function useBoards({ sessionId, onStatusChange, pushToast }: UseBoardsOpt
   }, [activeBoardId, onStatusChange, sessionId]);
 
   const loadCollaborators = useCallback(async () => {
-    if (!activeBoard || activeBoard.ownerId !== sessionId) {
+    if (!canManageSharing || !activeBoard || activeBoard.ownerId !== sessionId) {
       setCollaborators([]);
       return;
     }
@@ -128,7 +129,7 @@ export function useBoards({ sessionId, onStatusChange, pushToast }: UseBoardsOpt
     } finally {
       setIsCollaboratorsLoading(false);
     }
-  }, [activeBoard, onStatusChange, sessionId]);
+  }, [activeBoard, canManageSharing, onStatusChange, sessionId]);
 
   useEffect(() => {
     void loadBoards();
@@ -299,6 +300,11 @@ export function useBoards({ sessionId, onStatusChange, pushToast }: UseBoardsOpt
       return;
     }
 
+    if (!canManageSharing) {
+      pushToast("info", "Verify your email to create share links");
+      return;
+    }
+
     if (targetBoard.ownerId !== sessionId) {
       pushToast("info", "Only board owner can regenerate share links");
       return;
@@ -336,10 +342,15 @@ export function useBoards({ sessionId, onStatusChange, pushToast }: UseBoardsOpt
       onStatusChange(error instanceof Error ? error.message : "Share link failed");
       pushToast("error", "Unable to create share link");
     }
-  }, [activeBoard, onStatusChange, pushToast, sessionId]);
+  }, [activeBoard, canManageSharing, onStatusChange, pushToast, sessionId]);
 
   const handleCopyExistingShareLink = useCallback(async (boardToCopy?: Board) => {
     const targetBoard = boardToCopy ?? activeBoard;
+
+    if (!canManageSharing) {
+      pushToast("info", "Verify your email to copy share links");
+      return;
+    }
 
     if (!targetBoard?.shareToken) {
       pushToast(
@@ -358,11 +369,16 @@ export function useBoards({ sessionId, onStatusChange, pushToast }: UseBoardsOpt
     } catch {
       pushToast("error", "Unable to copy share link");
     }
-  }, [activeBoard, onStatusChange, pushToast]);
+  }, [activeBoard, canManageSharing, onStatusChange, pushToast]);
 
   const handleRevokeShareLink = useCallback(
     async (boardToRevoke?: Board) => {
       const targetBoard = boardToRevoke ?? activeBoard;
+
+      if (!canManageSharing) {
+        pushToast("info", "Verify your email to revoke share links");
+        return;
+      }
 
       if (!targetBoard || targetBoard.ownerId !== sessionId) {
         pushToast("info", "Only board owner can revoke share links");
@@ -412,10 +428,15 @@ export function useBoards({ sessionId, onStatusChange, pushToast }: UseBoardsOpt
         pushToast("error", "Unable to revoke share link");
       }
     },
-    [activeBoard, activeBoardId, onStatusChange, pushToast, sessionId]
+    [activeBoard, activeBoardId, canManageSharing, onStatusChange, pushToast, sessionId]
   );
 
   const handleGrantAccessByEmail = useCallback(async () => {
+    if (!canManageSharing) {
+      pushToast("info", "Verify your email to manage collaborators");
+      return;
+    }
+
     if (!activeBoard || activeBoard.ownerId !== sessionId) {
       pushToast("info", "Only board owner can grant email access");
       return;
@@ -458,10 +479,15 @@ export function useBoards({ sessionId, onStatusChange, pushToast }: UseBoardsOpt
       onStatusChange(error instanceof Error ? error.message : "Unable to grant access");
       pushToast("error", "Unable to grant access");
     }
-  }, [activeBoard, loadCollaborators, onStatusChange, pushToast, sessionId]);
+  }, [activeBoard, canManageSharing, loadCollaborators, onStatusChange, pushToast, sessionId]);
 
   const handleUpdateCollaboratorPermission = useCallback(
     async (email: string, permission: BoardPermission) => {
+      if (!canManageSharing) {
+        pushToast("info", "Verify your email to manage collaborators");
+        return;
+      }
+
       if (!activeBoard || activeBoard.ownerId !== sessionId) {
         pushToast("info", "Only board owner can update collaborator access");
         return;
@@ -497,11 +523,16 @@ export function useBoards({ sessionId, onStatusChange, pushToast }: UseBoardsOpt
         setCollaboratorActionEmail(null);
       }
     },
-    [activeBoard, onStatusChange, pushToast, sessionId]
+    [activeBoard, canManageSharing, onStatusChange, pushToast, sessionId]
   );
 
   const handleRemoveCollaborator = useCallback(
     async (email: string) => {
+      if (!canManageSharing) {
+        pushToast("info", "Verify your email to manage collaborators");
+        return;
+      }
+
       if (!activeBoard || activeBoard.ownerId !== sessionId) {
         return;
       }
@@ -539,7 +570,7 @@ export function useBoards({ sessionId, onStatusChange, pushToast }: UseBoardsOpt
         setCollaboratorActionEmail(null);
       }
     },
-    [activeBoard, onStatusChange, pushToast, sessionId]
+    [activeBoard, canManageSharing, onStatusChange, pushToast, sessionId]
   );
 
   const resetBoards = useCallback(() => {
