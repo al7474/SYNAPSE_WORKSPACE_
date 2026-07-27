@@ -80,7 +80,7 @@ export function WorkspaceSidebar({
       {isSidebarOpen && (
         <button
           type="button"
-          className="fixed inset-x-0 bottom-0 top-[130px] z-30 bg-black/70 lg:hidden"
+          className="fixed inset-x-0 bottom-0 top-[130px] z-30 bg-black/70 md:hidden"
           onClick={onClose}
           aria-label="Close workspace navigation"
         />
@@ -90,8 +90,8 @@ export function WorkspaceSidebar({
         id="workspace-sidebar"
         className={
           isSidebarOpen
-            ? "fixed inset-x-auto bottom-0 left-0 top-[130px] z-40 flex w-[88vw] max-w-[320px] flex-col border-r border-[rgba(255,255,255,0.1)] bg-[#0a0a0a] shadow-2xl lg:static lg:z-auto lg:w-[256px] lg:shrink-0 lg:shadow-none"
-            : "hidden flex-col border-r border-[rgba(255,255,255,0.1)] bg-[#0a0a0a] lg:flex lg:w-[256px] lg:shrink-0"
+            ? "fixed inset-x-auto bottom-0 left-0 top-[130px] z-40 flex w-[88vw] max-w-[320px] flex-col border-r border-[rgba(255,255,255,0.1)] bg-[#0a0a0a] shadow-2xl md:static md:z-auto md:w-[256px] md:shrink-0 md:shadow-none"
+            : "flex max-md:hidden w-[256px] shrink-0 flex-col border-r border-[rgba(255,255,255,0.1)] bg-[#0a0a0a]"
         }
       >
         <nav className="flex-1 overflow-y-auto px-4 py-4">

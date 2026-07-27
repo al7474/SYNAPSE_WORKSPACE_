@@ -14,7 +14,7 @@ export function WorkspaceHeader({ isSidebarOpen, onToggleSidebar, onLogout }: Wo
       <div className="flex min-w-0 items-center gap-2">
         <button
           type="button"
-          className="grid h-9 w-9 shrink-0 place-items-center border border-[rgba(255,255,255,0.1)] text-[#a1a1a1] lg:hidden"
+          className="grid h-9 w-9 shrink-0 place-items-center border border-[rgba(255,255,255,0.1)] text-[#a1a1a1] md:hidden"
           onClick={onToggleSidebar}
           aria-expanded={isSidebarOpen}
           aria-controls="workspace-sidebar"
