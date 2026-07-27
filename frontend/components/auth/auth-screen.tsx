@@ -139,7 +139,7 @@ export function AuthScreen({
             </div>
           </form>
         ) : isLoginMode ? (
-          <form id="account-auth-form" className="flex w-full flex-col gap-4" onSubmit={onSignIn}>
+          <form id="account-auth-form" noValidate className="flex w-full flex-col gap-4" onSubmit={onSignIn}>
             <Input
               id="email"
               type="email"
@@ -148,7 +148,6 @@ export function AuthScreen({
               onChange={(event) => onEmailChange(event.target.value)}
               placeholder="Email"
               className={AUTH_INPUT_CLASS_NAME}
-              required
             />
             <Input
               id="password"
@@ -158,7 +157,6 @@ export function AuthScreen({
               onChange={(event) => onPasswordChange(event.target.value)}
               placeholder="Password"
               className={AUTH_INPUT_CLASS_NAME}
-              required
             />
             {authError && <p className="break-words font-mono text-[12px] text-red-300">{authError}</p>}
             <div className="w-full pt-2">

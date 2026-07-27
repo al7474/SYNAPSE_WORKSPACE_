@@ -20,7 +20,7 @@ type WorkspaceShellProps = {
 
 export function WorkspaceShell({ emailVerification, header, sidebar, content, deleteDialog, toasts }: WorkspaceShellProps) {
   return (
-    <main className="flex min-h-screen min-w-0 flex-col overflow-x-hidden bg-[#0a0a0a] font-mono text-[#fafafa]">
+    <main className="flex h-dvh min-h-0 min-w-0 flex-col overflow-hidden bg-[#0a0a0a] font-mono text-[#fafafa]">
       <WorkspaceHeader {...header} />
       {emailVerification && <EmailVerificationBanner {...emailVerification} />}
 
@@ -37,7 +37,7 @@ export function WorkspaceShell({ emailVerification, header, sidebar, content, de
         </div>
       </div>
 
-      <div className="relative flex min-h-[calc(100vh-130px)] min-w-0 flex-1">
+      <div className="relative flex min-h-0 min-w-0 flex-1">
         <WorkspaceSidebar {...sidebar} />
         <WorkspaceContent {...content} />
       </div>

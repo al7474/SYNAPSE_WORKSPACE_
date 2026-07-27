@@ -376,7 +376,9 @@ export async function handleAuthRequest(
       }
 
       const body = await readJsonBody(request, dependencies.maxBodyBytes);
-      const email = normalizeEmail(requiredString(body, "email"));
+      const emailInput = typeof body.email === "string" ? body.email : "";
+      const password = typeof body.password === "string" ? body.password : "";
+      const email = normalizeEmail(emailInput);
 
       if (!(await allowRateLimitedRequest(response, dependencies, "auth:login:email", email, 5, LOGIN_WINDOW_MS))) {
         return;
@@ -384,7 +386,7 @@ export async function handleAuthRequest(
 
       const session = await dependencies.authService.login(
         email,
-        requiredString(body, "password")
+        password
       );
       await dependencies.rateLimiter.reset(createRateLimitKey("auth:login:email", email));
       sendSessionResponse(response, 200, session, dependencies.isProduction);

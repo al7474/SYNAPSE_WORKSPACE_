@@ -10,6 +10,7 @@ import type {
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_MAX_BYTES = 72;
+const INVALID_LOGIN_MESSAGE = "The credentials do not match.";
 const DUMMY_PASSWORD_HASH = "$2b$12$2c6DAXfFlGAuWN7KWB31UeY.i/eBFBHo25GE2i87JFqsnVpYihZTO";
 
 type UserRow = {
@@ -191,7 +192,7 @@ export class AuthService {
     const email = normalizeEmail(emailInput);
 
     if (!EMAIL_PATTERN.test(email) || !password) {
-      throw new AuthError("INVALID_CREDENTIALS", "Invalid email or password", 401);
+      throw new AuthError("INVALID_CREDENTIALS", INVALID_LOGIN_MESSAGE, 401);
     }
 
     const result = await this.pool.query<UserRow>(
@@ -207,7 +208,7 @@ export class AuthService {
     const passwordMatches = await bcrypt.compare(password, passwordHash);
 
     if (!userRow || !passwordMatches) {
-      throw new AuthError("INVALID_CREDENTIALS", "Invalid email or password", 401);
+      throw new AuthError("INVALID_CREDENTIALS", INVALID_LOGIN_MESSAGE, 401);
     }
 
     return this.createSession(toAuthUser(userRow));

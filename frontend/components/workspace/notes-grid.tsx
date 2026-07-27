@@ -25,7 +25,7 @@ export function NotesGrid({
   onCreateNote,
 }: NotesGridProps) {
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
       {!isLoading && canEditBoard && (
         <button
           type="button"

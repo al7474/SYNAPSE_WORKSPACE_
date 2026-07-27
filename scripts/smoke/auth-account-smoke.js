@@ -523,6 +523,27 @@ async function main() {
       password: "wrong-password",
     });
     assert(wrongLogin.response.status === 401, "Invalid password was accepted");
+    assert(
+      wrongLogin.payload.error === "The credentials do not match.",
+      "Invalid login exposed credential details"
+    );
+
+    const missingPasswordLogin = await requestJson("/auth/login", "POST", { email });
+    assert(missingPasswordLogin.response.status === 401, "Missing password did not use generic login failure");
+    assert(
+      missingPasswordLogin.payload.error === "The credentials do not match.",
+      "Missing password exposed validation details"
+    );
+
+    const shortPasswordLogin = await requestJson("/auth/login", "POST", {
+      email,
+      password: "short",
+    });
+    assert(shortPasswordLogin.response.status === 401, "Short password did not use generic login failure");
+    assert(
+      shortPasswordLogin.payload.error === "The credentials do not match.",
+      "Short password exposed password policy details"
+    );
 
     const rateLimitedEmail = `auth-rate-limit-${Date.now()}@example.com`;
     for (let attempt = 0; attempt < 5; attempt += 1) {

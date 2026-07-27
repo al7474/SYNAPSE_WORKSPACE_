@@ -14,6 +14,8 @@ import {
 } from "@/lib/session";
 import type { AuthMode, SessionMode, SessionState, ToastKind } from "@/types/workspace";
 
+const INVALID_LOGIN_MESSAGE = "The credentials do not match.";
+
 type UseAuthSessionOptions = {
   onStatusChange: (status: string) => void;
   pushToast: (kind: ToastKind, message: string) => void;
@@ -213,13 +215,8 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
 
       const email = authEmail.trim().toLowerCase();
 
-      if (!email.includes("@")) {
-        setAuthError("Please use a valid email address");
-        return;
-      }
-
-      if (authPassword.length < 8) {
-        setAuthError("Password must be at least 8 characters");
+      if (!email || !email.includes("@") || !authPassword) {
+        setAuthError(INVALID_LOGIN_MESSAGE);
         return;
       }
 
