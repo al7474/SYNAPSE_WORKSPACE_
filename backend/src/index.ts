@@ -32,6 +32,8 @@ import type { Note } from "./modules/notes/notes.types.js";
 
 const GUEST_SESSION_PATH = "/auth/guest-session";
 const AUTH_PATH_SET = new Set<string>(Object.values(AUTH_PATHS));
+const HEALTH_PATH = "/healthz";
+const READINESS_PATH = "/readyz";
 
 function setAuthCorsHeaders(request: Request, response: ServerResponse): void {
   const requestOrigin = request.headers.get("origin");
@@ -71,6 +73,17 @@ function sendJson(response: ServerResponse, statusCode: number, payload: unknown
   response.setHeader("Cache-Control", "no-store");
   response.setHeader("Pragma", "no-cache");
   response.setHeader("Expires", "0");
+  response.end(JSON.stringify(payload));
+}
+
+function sendHealthResponse(
+  response: ServerResponse,
+  statusCode: number,
+  payload: { status: string }
+): void {
+  response.statusCode = statusCode;
+  response.setHeader("Content-Type", "application/json; charset=utf-8");
+  response.setHeader("Cache-Control", "no-store");
   response.end(JSON.stringify(payload));
 }
 
@@ -220,6 +233,7 @@ async function handleGuestSessionRequest(
 async function bootstrap() {
   const db = new PrismaClient();
   await db.$connect();
+  const intervals = new Set<NodeJS.Timeout>();
   const rateLimiter: RateLimiter =
     env.authRateLimitStore === "upstash"
       ? new UpstashRateLimiter(
@@ -319,6 +333,36 @@ async function bootstrap() {
   const server = createServer((request, response) => {
     setSecurityHeaders(response, env.isProduction);
     const requestUrl = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
+
+    if (requestUrl.pathname === HEALTH_PATH) {
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        response.setHeader("Allow", "GET, HEAD");
+        sendHealthResponse(response, 405, { status: "method_not_allowed" });
+        return;
+      }
+
+      sendHealthResponse(response, 200, { status: "ok" });
+      return;
+    }
+
+    if (requestUrl.pathname === READINESS_PATH) {
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        response.setHeader("Allow", "GET, HEAD");
+        sendHealthResponse(response, 405, { status: "method_not_allowed" });
+        return;
+      }
+
+      void db.$queryRaw`SELECT 1`
+        .then(() => sendHealthResponse(response, 200, { status: "ready" }))
+        .catch((error: unknown) => {
+          console.error("Readiness check failed:", error);
+
+          if (!response.headersSent) {
+            sendHealthResponse(response, 503, { status: "not_ready" });
+          }
+        });
+      return;
+    }
 
     if (requestUrl.pathname === GUEST_SESSION_PATH || AUTH_PATH_SET.has(requestUrl.pathname)) {
       const requestInit: RequestInit & { duplex?: "half" } = {
@@ -442,6 +486,7 @@ async function bootstrap() {
 
         if (authErrorCode === "28P01") {
           clearInterval(intervalId);
+          intervals.delete(intervalId);
           console.error(
             "Pending reindex worker disabled due to database auth error (28P01). " +
               "Verify backend DATABASE_URL credentials and recreate local DB volume if needed."
@@ -453,6 +498,7 @@ async function bootstrap() {
         running = false;
       }
     }, env.pendingReindexIntervalMs);
+    intervals.add(intervalId);
   }
 
   if (env.guestSessionCleanupIntervalMs > 0) {
@@ -473,6 +519,7 @@ async function bootstrap() {
       }
     }, env.guestSessionCleanupIntervalMs);
 
+    intervals.add(intervalId);
     intervalId.unref();
   }
 
@@ -495,8 +542,43 @@ async function bootstrap() {
       }
     }, env.authCleanupIntervalMs);
 
+    intervals.add(intervalId);
     intervalId.unref();
   }
+
+  let shutdownPromise: Promise<void> | null = null;
+  const shutdown = (signal: string): void => {
+    if (shutdownPromise) {
+      return;
+    }
+
+    shutdownPromise = new Promise<void>((resolve, reject) => {
+      console.log(`Received ${signal}; shutting down backend`);
+
+      for (const intervalId of intervals) {
+        clearInterval(intervalId);
+      }
+
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      });
+    })
+      .then(() => db.$disconnect())
+      .catch((error: unknown) => {
+        console.error("Backend shutdown failed:", error);
+        process.exitCode = 1;
+      });
+
+    void shutdownPromise;
+  };
+
+  process.once("SIGTERM", () => shutdown("SIGTERM"));
+  process.once("SIGINT", () => shutdown("SIGINT"));
 }
 
 bootstrap().catch((error) => {
