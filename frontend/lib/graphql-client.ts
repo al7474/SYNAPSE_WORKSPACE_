@@ -79,19 +79,27 @@ export async function graphQLRequest<T>(
 
 export function buildNoteSubscriptionUrl(
   boardId: string,
-  shareToken: string | null
+  shareToken: string | null,
+  eventName: "noteUpdated" | "noteDeleted" = "noteUpdated"
 ): string {
-  const subscriptionQuery = `
-    subscription NoteUpdated($boardId: ID!, $shareToken: String) {
-      noteUpdated(boardId: $boardId, shareToken: $shareToken) {
-        id
-        boardId
-        title
-        content
-        embeddingPending
-      }
-    }
-  `;
+  const subscriptionQuery =
+    eventName === "noteUpdated"
+      ? `
+        subscription NoteUpdated($boardId: ID!, $shareToken: String) {
+          noteUpdated(boardId: $boardId, shareToken: $shareToken) {
+            id
+            boardId
+            title
+            content
+            embeddingPending
+          }
+        }
+      `
+      : `
+        subscription NoteDeleted($boardId: ID!, $shareToken: String) {
+          noteDeleted(boardId: $boardId, shareToken: $shareToken)
+        }
+      `;
 
   const queryParam = encodeURIComponent(subscriptionQuery);
   const variablesParam = encodeURIComponent(JSON.stringify({ boardId, shareToken }));

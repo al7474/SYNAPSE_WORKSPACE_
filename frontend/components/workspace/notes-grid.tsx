@@ -29,6 +29,7 @@ export function NotesGrid({
       {!isLoading && canEditBoard && (
         <button
           type="button"
+          data-testid="create-note"
           className="grid aspect-square min-h-45 place-items-center border border-dashed border-[rgba(255,255,255,0.1)] bg-transparent text-[#a1a1a1] hover:border-[#737373]"
           onClick={() => void onCreateNote()}
           disabled={isCreating}
@@ -49,6 +50,8 @@ export function NotesGrid({
         return (
           <article
             key={note.id}
+            data-testid="note-card"
+            data-note-id={note.id}
             className={
               note.id === selectedId
                 ? "flex aspect-square min-h-45 min-w-0 cursor-pointer flex-col overflow-hidden border border-[#737373] bg-[rgba(23,23,23,0.4)] p-4.25 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)]"

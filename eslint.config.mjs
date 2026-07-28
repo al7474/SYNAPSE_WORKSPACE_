@@ -49,5 +49,11 @@ export default tseslint.config(
       sourceType: "commonjs",
       globals: globals.node,
     },
+  },
+  {
+    files: ["scripts/e2e/**/*.mjs"],
+    languageOptions: {
+      globals: globals.node,
+    },
   }
 );

@@ -14,6 +14,11 @@ export interface Note {
   ownerId?: string;
 }
 
+export interface DeletedNoteEvent {
+  id: string;
+  boardId: string;
+}
+
 export type BoardPermission = "view" | "edit";
 
 export interface Board {

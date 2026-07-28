@@ -24,7 +24,7 @@ In the repository settings, open **Settings > Branches > Rulesets** or **Setting
 - Dismiss stale approvals when new commits are pushed.
 - Require approval from Code Owners when a code owners file is added later.
 - Require status checks to pass before merging and require the branch to be up to date.
-- Require the CI checks `CI / Quality and build`, `CI / PostgreSQL integration`, and `CodeQL / Analyze` after their first successful run. GitHub may display the workflow and job names slightly differently; choose the contexts produced by the current workflows.
+- Require the CI checks `CI / Quality and build`, `CI / PostgreSQL integration`, `CI / Browser E2E`, and `CodeQL / Analyze` after their first successful run. GitHub may display the workflow and job names slightly differently; choose the contexts produced by the current workflows.
 - Require conversation resolution before merging.
 - Block force pushes and branch deletion.
 - Apply the rules to administrators as well.

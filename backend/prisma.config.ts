@@ -6,7 +6,7 @@ import { defineConfig, env } from "prisma/config";
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(currentDir, "..");
 
-dotenv.config({ path: path.join(currentDir, ".env"), override: true });
+dotenv.config({ path: path.join(currentDir, ".env") });
 dotenv.config({ path: path.join(repoRoot, ".env") });
 
 export default defineConfig({

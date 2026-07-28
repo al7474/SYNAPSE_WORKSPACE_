@@ -23,6 +23,7 @@
     "build": "pnpm -r --filter @synapse/* build",
     "test": "pnpm --filter @synapse/backend test",
     "test:integration": "pnpm --filter @synapse/backend test:integration",
+    "e2e": "node scripts/e2e/run-e2e.mjs",
     "smoke:embedding": "node --env-file=.env scripts/smoke/openrouter-embedding.js",
     "smoke:embedding:db": "node --env-file=.env scripts/smoke/openrouter-pgvector-e2e.js",
     "smoke:embedding:db:local": "node scripts/smoke/run-local-pgvector-e2e.js",
@@ -56,6 +57,7 @@
   "devDependencies": {
     "@eslint/js": "^9.39.5",
     "@next/eslint-plugin-next": "15.0.3",
+    "@playwright/test": "^1.62.0",
     "eslint": "^9.39.5",
     "eslint-plugin-react-hooks": "5.1.0",
     "globals": "^17.8.0",

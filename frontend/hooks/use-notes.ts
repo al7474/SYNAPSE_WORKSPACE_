@@ -107,14 +107,20 @@ export function useNotes({
       return;
     }
 
-    const eventSource = new EventSource(
-      buildNoteSubscriptionUrl(activeBoardId, activeShareToken),
+    const updatedEventSource = new EventSource(
+      buildNoteSubscriptionUrl(activeBoardId, activeShareToken, "noteUpdated"),
+      { withCredentials: true }
+    );
+    const deletedEventSource = new EventSource(
+      buildNoteSubscriptionUrl(activeBoardId, activeShareToken, "noteDeleted"),
       { withCredentials: true }
     );
 
-    eventSource.onmessage = (event) => {
+    const handleUpdatedMessage = (event: Event) => {
       try {
-        const payload = JSON.parse(event.data) as { data?: { noteUpdated?: Note } };
+        const payload = JSON.parse((event as MessageEvent<string>).data) as {
+          data?: { noteUpdated?: Note };
+        };
         const note = payload.data?.noteUpdated;
 
         if (!note) {
@@ -137,11 +143,44 @@ export function useNotes({
       }
     };
 
-    eventSource.onerror = () => {
+    const handleDeletedMessage = (event: Event) => {
+      try {
+        const payload = JSON.parse((event as MessageEvent<string>).data) as {
+          data?: { noteDeleted?: string };
+        };
+        const deletedNoteId = payload.data?.noteDeleted;
+
+        if (!deletedNoteId) {
+          return;
+        }
+
+        setNotes((previousNotes) => previousNotes.filter((note) => note.id !== deletedNoteId));
+        setSemanticResults((previousResults) =>
+          previousResults ? previousResults.filter((note) => note.id !== deletedNoteId) : null
+        );
+        setSelectedId((previousSelectedId) =>
+          previousSelectedId === deletedNoteId ? "" : previousSelectedId
+        );
+      } catch {
+        pushToast("error", "Realtime payload parse error");
+      }
+    };
+
+    const handleRealtimeError = () => {
       pushToast("error", "Realtime connection interrupted");
     };
 
-    return () => eventSource.close();
+    updatedEventSource.addEventListener("next", handleUpdatedMessage);
+    deletedEventSource.addEventListener("next", handleDeletedMessage);
+    updatedEventSource.onerror = handleRealtimeError;
+    deletedEventSource.onerror = handleRealtimeError;
+
+    return () => {
+      updatedEventSource.removeEventListener("next", handleUpdatedMessage);
+      deletedEventSource.removeEventListener("next", handleDeletedMessage);
+      updatedEventSource.close();
+      deletedEventSource.close();
+    };
   }, [activeBoardId, activeShareToken, pushToast, sessionId]);
 
   useEffect(() => {
@@ -163,6 +202,20 @@ export function useNotes({
     setDraftTitle(selectedNote.title);
     setDraftContent(selectedNote.content);
   }, [selectedNote]);
+
+  useEffect(() => {
+    if (!selectedId || selectedNote) {
+      return;
+    }
+
+    const nextSelectedNote = notes[0];
+    setSelectedId(nextSelectedNote?.id || "");
+
+    if (!nextSelectedNote) {
+      setDraftTitle("");
+      setDraftContent("");
+    }
+  }, [notes, selectedId, selectedNote]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

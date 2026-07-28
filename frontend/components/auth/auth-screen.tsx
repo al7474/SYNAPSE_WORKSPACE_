@@ -102,6 +102,7 @@ export function AuthScreen({
         </div>
 
         <Button
+          data-testid="enter-demo"
           className="h-[52px] min-h-0 w-full rounded-none bg-[#e5e5e5] px-4 pb-4 pt-5 font-mono text-[12px] font-normal uppercase tracking-[0.6px] text-[#171717] shadow-none hover:bg-[#e5e5e5]"
           onClick={onGuestAccess}
           disabled={isSigningIn}

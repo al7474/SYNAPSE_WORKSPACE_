@@ -3,6 +3,7 @@ type EmbeddingsApiResponse = {
 };
 
 export type OpenRouterEmbeddingsOptions = {
+  endpoint?: string;
   timeoutMs?: number;
   maxAttempts?: number;
   retryDelayMs?: number;
@@ -12,6 +13,7 @@ export type OpenRouterEmbeddingsOptions = {
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_MAX_ATTEMPTS = 3;
 const DEFAULT_RETRY_DELAY_MS = 250;
+const DEFAULT_ENDPOINT = "https://openrouter.ai/api/v1/embeddings";
 
 function readPositiveOption(value: number | undefined, fallback: number, name: string): number {
   if (value === undefined) {
@@ -54,6 +56,7 @@ function waitForRetry(delayMs: number): Promise<void> {
 }
 
 export class OpenRouterEmbeddingsService {
+  private readonly endpoint: string;
   private readonly timeoutMs: number;
   private readonly maxAttempts: number;
   private readonly retryDelayMs: number;
@@ -65,6 +68,7 @@ export class OpenRouterEmbeddingsService {
     private readonly expectedDimension: number,
     options: OpenRouterEmbeddingsOptions = {}
   ) {
+    this.endpoint = options.endpoint ?? DEFAULT_ENDPOINT;
     this.timeoutMs = readPositiveOption(options.timeoutMs, DEFAULT_TIMEOUT_MS, "timeoutMs");
     this.maxAttempts = readPositiveOption(
       options.maxAttempts,
@@ -93,7 +97,7 @@ export class OpenRouterEmbeddingsService {
       const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
 
       try {
-        const response = await this.fetchImpl("https://openrouter.ai/api/v1/embeddings", {
+        const response = await this.fetchImpl(this.endpoint, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

@@ -28,7 +28,7 @@ import {
 } from "./modules/auth/rate-limit.service.js";
 import { CSRF_HEADER_NAME, isCsrfTokenValid } from "./modules/auth/csrf.service.js";
 import { NotesService } from "./modules/notes/notes.service.js";
-import type { Note } from "./modules/notes/notes.types.js";
+import type { Note, DeletedNoteEvent } from "./modules/notes/notes.types.js";
 
 const GUEST_SESSION_PATH = "/auth/guest-session";
 const AUTH_PATH_SET = new Set<string>(Object.values(AUTH_PATHS));
@@ -244,11 +244,15 @@ async function bootstrap() {
           })
         )
       : new InMemoryRateLimiter(env.authRateLimitMaxKeys);
-  const pubSub = createPubSub<{ NOTE_UPDATED: [Note] }>();
+  const pubSub = createPubSub<{
+    NOTE_UPDATED: [Note];
+    NOTE_DELETED: [DeletedNoteEvent];
+  }>();
   const embeddingsService = new OpenRouterEmbeddingsService(
     env.openRouterApiKey,
     env.embeddingModel,
-    env.embeddingDimension
+    env.embeddingDimension,
+    { endpoint: env.openRouterApiUrl }
   );
   const guestSessions = new GuestSessionService(db, env.guestSessionTtlMs);
   const authService = new AuthService(db, {
@@ -266,12 +270,24 @@ async function bootstrap() {
   });
   const notesService = new NotesService(db, embeddingsService);
 
+  function subscribe(topic: "NOTE_UPDATED"): AsyncIterable<Note>;
+  function subscribe(topic: "NOTE_DELETED"): AsyncIterable<DeletedNoteEvent>;
+  function subscribe(
+    topic: "NOTE_UPDATED" | "NOTE_DELETED"
+  ): AsyncIterable<Note | DeletedNoteEvent> {
+    if (topic === "NOTE_UPDATED") {
+      return pubSub.subscribe("NOTE_UPDATED");
+    }
+
+    return pubSub.subscribe("NOTE_DELETED");
+  }
+
   const yoga = createYoga({
     schema: buildSchema({
       publish: async (topic, payload) => {
         await pubSub.publish(topic, payload);
       },
-      subscribe: (topic) => pubSub.subscribe(topic),
+      subscribe,
     }),
     context: async ({ request }) => {
       const authSessionCookieValue = readAuthSessionToken(request);

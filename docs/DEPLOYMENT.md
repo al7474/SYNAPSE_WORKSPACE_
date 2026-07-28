@@ -59,6 +59,7 @@ Never place real API keys, database passwords, session tokens, or Resend credent
 | Variable | Required | Production rule |
 | --- | --- | --- |
 | `OPENROUTER_API_KEY` | Yes in production | Store only as a hosting secret. The backend preserves note writes if the provider fails, but the key must exist for indexing to work. |
+| `OPENROUTER_API_URL` | No | Defaults to the official OpenRouter embeddings endpoint. HTTP is allowed only for a local development/test host; production requires HTTPS. |
 | `OPENROUTER_EMBEDDING_MODEL` | No | Defaults to the configured free embedding model. Confirm that the selected model supports the configured dimension. |
 | `OPENROUTER_EMBEDDING_DIMENSION` | No | Defaults to `1024`, which must match the PostgreSQL `vector(1024)` contract. |
 

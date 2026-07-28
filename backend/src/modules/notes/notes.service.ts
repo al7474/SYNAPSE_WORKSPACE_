@@ -7,6 +7,7 @@ import type {
   BoardCollaborator,
   BoardPermission,
   CreateNoteInput,
+  DeletedNoteEvent,
   ListNotesInput,
   Note,
   SemanticSearchInput,
@@ -710,6 +711,26 @@ export class NotesService {
     id: string,
     ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
   ): Promise<boolean> {
+    return Boolean(
+      await this.deleteNoteWithMetadata(
+        ownerId,
+        userEmail,
+        boardId,
+        shareToken,
+        id,
+        ownerMetadata
+      )
+    );
+  }
+
+  async deleteNoteWithMetadata(
+    ownerId: string,
+    userEmail: string | undefined,
+    boardId: string,
+    shareToken: string | undefined,
+    id: string,
+    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+  ): Promise<DeletedNoteEvent | null> {
     await this.requireBoardAccess(
       ownerId,
       userEmail,
@@ -718,13 +739,27 @@ export class NotesService {
       true,
       ownerMetadata
     );
-    const result = await this.db.note.deleteMany({
-      where: {
-        id: this.parseId(id, "Note"),
-        boardId: this.parseId(boardId, "Board"),
-      },
+    const noteId = this.parseId(id, "Note");
+    const boardValue = this.parseId(boardId, "Board");
+
+    return this.db.$transaction(async (transaction) => {
+      const note = await transaction.note.findFirst({
+        where: { id: noteId, boardId: boardValue },
+        select: { id: true, boardId: true },
+      });
+
+      if (!note) {
+        return null;
+      }
+
+      const result = await transaction.note.deleteMany({
+        where: { id: note.id, boardId: note.boardId },
+      });
+
+      return result.count > 0
+        ? { id: String(note.id), boardId: String(note.boardId) }
+        : null;
     });
-    return result.count > 0;
   }
 
   async reindexPendingEmbeddingsForBoard(

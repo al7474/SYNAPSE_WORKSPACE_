@@ -36,7 +36,7 @@ export function NoteEditorPanel({
           <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-[#a3a3a3]">
             <span>{selectedNote?.embeddingPending ? "AI indexing queued" : "AI indexed"}</span>
             <span>•</span>
-            <span>Last saved: {lastSavedAt || "-"}</span>
+            <span data-testid="autosave-status">Last saved: {lastSavedAt || "-"}</span>
             {!canEditBoard && <span>• Read only</span>}
           </div>
         </div>

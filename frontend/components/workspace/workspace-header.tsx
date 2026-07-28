@@ -28,6 +28,7 @@ export function WorkspaceHeader({ isSidebarOpen, onToggleSidebar, onLogout }: Wo
       </div>
       <button
         type="button"
+        data-testid="logout"
         className="flex h-9 shrink-0 items-center gap-2 border border-[rgba(255,255,255,0.1)] px-[13px] py-[9px] text-[11px] uppercase tracking-[0.55px] text-[#fafafa] hover:border-[#737373]"
         onClick={onLogout}
         aria-label="Log out"

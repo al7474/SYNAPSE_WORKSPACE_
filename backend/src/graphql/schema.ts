@@ -2,7 +2,7 @@ import { createSchema } from "graphql-yoga";
 import { GraphQLError } from "graphql";
 import type { OwnerMetadata } from "../modules/auth/auth.types.js";
 import type { NotesService } from "../modules/notes/notes.service.js";
-import type { BoardPermission, Note } from "../modules/notes/notes.types.js";
+import type { BoardPermission, DeletedNoteEvent, Note } from "../modules/notes/notes.types.js";
 
 interface GraphQLContext {
   notesService: NotesService;
@@ -13,17 +13,19 @@ interface GraphQLContext {
   revalidateSession: () => Promise<boolean>;
 }
 
-interface NoteUpdatedPubSub {
+export interface NotePubSub {
   publish(topic: "NOTE_UPDATED", payload: Note): Promise<void> | void;
+  publish(topic: "NOTE_DELETED", payload: DeletedNoteEvent): Promise<void> | void;
   subscribe(topic: "NOTE_UPDATED"): AsyncIterable<Note>;
+  subscribe(topic: "NOTE_DELETED"): AsyncIterable<DeletedNoteEvent>;
 }
 
-export function buildSchema(pubSub: NoteUpdatedPubSub) {
-  async function* authorizedBoardIterator(
-    source: AsyncIterable<Note>,
+export function buildSchema(pubSub: NotePubSub) {
+  async function* authorizedBoardIterator<T extends { boardId: string }>(
+    source: AsyncIterable<T>,
     boardId: string,
     authorize: () => Promise<void>
-  ): AsyncIterable<Note> {
+  ): AsyncIterable<T> {
     for await (const event of source) {
       if (event.boardId !== boardId) {
         continue;
@@ -124,6 +126,7 @@ export function buildSchema(pubSub: NoteUpdatedPubSub) {
 
       type Subscription {
         noteUpdated(boardId: ID!, shareToken: String): Note!
+        noteDeleted(boardId: ID!, shareToken: String): ID!
       }
     `,
     resolvers: {
@@ -245,7 +248,7 @@ export function buildSchema(pubSub: NoteUpdatedPubSub) {
         },
         deleteNote: async (_parent, args, ctx) => {
           const sessionId = requireSessionId(ctx);
-          return ctx.notesService.deleteNote(
+          const deletedNote = await ctx.notesService.deleteNoteWithMetadata(
             sessionId,
             ctx.userEmail ?? undefined,
             args.boardId,
@@ -253,6 +256,12 @@ export function buildSchema(pubSub: NoteUpdatedPubSub) {
             args.id,
             ctx.ownerMetadata
           );
+
+          if (deletedNote) {
+            await pubSub.publish("NOTE_DELETED", deletedNote);
+          }
+
+          return Boolean(deletedNote);
         },
         reindexPendingEmbeddings: async (_parent, args, ctx) => {
           const sessionId = requireSessionId(ctx);
@@ -295,6 +304,29 @@ export function buildSchema(pubSub: NoteUpdatedPubSub) {
             return authorizedBoardIterator(pubSub.subscribe("NOTE_UPDATED"), args.boardId, authorize);
           },
           resolve: (payload: Note) => payload,
+        },
+        noteDeleted: {
+          subscribe: async (_parent, args, ctx) => {
+            const sessionId = requireSessionId(ctx);
+            const authorize = async () => {
+              if (!(await ctx.revalidateSession())) {
+                throw new Error("Missing authenticated session cookie.");
+              }
+
+              await ctx.notesService.assertBoardAccess(
+                sessionId,
+                ctx.userEmail ?? undefined,
+                args.boardId,
+                args.shareToken ?? undefined,
+                false,
+                ctx.ownerMetadata
+              );
+            };
+
+            await authorize();
+            return authorizedBoardIterator(pubSub.subscribe("NOTE_DELETED"), args.boardId, authorize);
+          },
+          resolve: (payload: DeletedNoteEvent) => payload.id,
         },
       },
     },

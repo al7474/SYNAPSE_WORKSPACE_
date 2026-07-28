@@ -8,7 +8,7 @@ const backendDir = path.resolve(currentDir, "../..");
 const repoRoot = path.resolve(backendDir, "..");
 
 // Prefer backend/.env for backend runtime, then fill missing values from root .env.
-dotenv.config({ path: path.join(backendDir, ".env"), override: true });
+dotenv.config({ path: path.join(backendDir, ".env") });
 dotenv.config({ path: path.join(repoRoot, ".env") });
 
 type NodeEnvironment = "development" | "test" | "production";
@@ -157,7 +157,33 @@ const resendApiKey = process.env.RESEND_API_KEY?.trim() || "";
 const authCsrfEnabled = readBoolean("AUTH_CSRF_ENABLED", true);
 const trustProxy = readBoolean("TRUST_PROXY", false);
 const openRouterApiKey = process.env.OPENROUTER_API_KEY?.trim() || "";
+const defaultOpenRouterApiUrl = "https://openrouter.ai/api/v1/embeddings";
 const embeddingDimension = readPositiveInteger("OPENROUTER_EMBEDDING_DIMENSION", 1024);
+
+function readOpenRouterApiUrl(): string {
+  const value = process.env.OPENROUTER_API_URL?.trim() || defaultOpenRouterApiUrl;
+  const parsed = parseUrl("OPENROUTER_API_URL", value);
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("OPENROUTER_API_URL must use HTTP or HTTPS");
+  }
+
+  if (isProduction && parsed.protocol !== "https:") {
+    throw new Error("OPENROUTER_API_URL must use HTTPS in production");
+  }
+
+  if (!isProduction && parsed.protocol === "http:") {
+    const localHosts = new Set(["localhost", "127.0.0.1", "::1"]);
+
+    if (!localHosts.has(parsed.hostname)) {
+      throw new Error("HTTP OPENROUTER_API_URL is only allowed for a local development host");
+    }
+  }
+
+  return parsed.toString();
+}
+
+const openRouterApiUrl = readOpenRouterApiUrl();
 
 if (embeddingDimension !== 1024) {
   throw new Error("OPENROUTER_EMBEDDING_DIMENSION must be 1024 to match PostgreSQL vector(1024)");
@@ -229,6 +255,7 @@ export const env = {
   frontendOrigin,
   databaseUrl: requireEnv("DATABASE_URL"),
   openRouterApiKey,
+  openRouterApiUrl,
   embeddingModel:
     process.env.OPENROUTER_EMBEDDING_MODEL || "nvidia/llama-nemotron-embed-vl-1b-v2:free",
   embeddingDimension,
