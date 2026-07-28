@@ -1,4 +1,4 @@
-import { Pool } from "pg";
+import { PrismaClient } from "@prisma/client";
 import { AuthError, AuthService } from "../../backend/src/modules/auth/auth.service.js";
 
 const DATABASE_URL =
@@ -11,8 +11,10 @@ function assert(condition: boolean, message: string): void {
 }
 
 async function main(): Promise<void> {
-  const pool = new Pool({ connectionString: DATABASE_URL });
-  const authService = new AuthService(pool, {
+  process.env.DATABASE_URL ||= DATABASE_URL;
+  const db = new PrismaClient();
+  await db.$connect();
+  const authService = new AuthService(db, {
     sessionTtlMs: 3600000,
     actionTokenTtlMs: 3600000,
     bcryptCost: 12,
@@ -31,11 +33,8 @@ async function main(): Promise<void> {
     assert(Boolean(registration), "Registration did not create an account");
     userId = registration!.verification.user.id;
 
-    const userRow = await pool.query<{ password_hash: string }>(
-      "SELECT password_hash FROM users WHERE id = $1",
-      [userId]
-    );
-    const passwordHash = userRow.rows[0]?.password_hash || "";
+    const userRow = await db.user.findUnique({ where: { id: BigInt(userId!) } });
+    const passwordHash = userRow?.passwordHash || "";
     assert(passwordHash.startsWith("$2b$"), "Password was not stored as bcrypt");
     assert(passwordHash !== oldPassword, "Raw password was stored");
 
@@ -130,10 +129,10 @@ async function main(): Promise<void> {
     );
   } finally {
     if (userId) {
-      await pool.query("DELETE FROM users WHERE id = $1", [userId]);
+      await db.user.deleteMany({ where: { id: BigInt(userId) } });
     }
 
-    await pool.end();
+    await db.$disconnect();
   }
 }
 

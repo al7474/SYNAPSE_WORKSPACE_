@@ -187,6 +187,20 @@ async function main() {
         "If this email can be registered, verification instructions will be sent.",
       "Registration response is not generic"
     );
+    const registrationCookieHeader = registered.response.headers.get("set-cookie");
+    assert(Boolean(registrationCookieHeader), "Registration did not start an account session");
+    const registrationCookie = registrationCookieHeader.split(";")[0];
+
+    const registrationSession = await requestJson("/auth/session", "GET", null, registrationCookie);
+    assert(registrationSession.response.status === 200, "Registration session lookup failed");
+    assert(registrationSession.payload.user.email === email, "Registration session returned the wrong user");
+    assert(registrationSession.payload.user.emailVerified === false, "New registration was unexpectedly verified");
+
+    const registrationBoards = await requestGraphQL("{ listBoards { id } }", registrationCookie);
+    assert(
+      !registrationBoards.payload.errors && registrationBoards.payload.data?.listBoards?.length > 0,
+      `New unverified account could not access the workspace: ${JSON.stringify(registrationBoards.payload)}`
+    );
 
     const duplicateRegistration = await requestJson("/auth/register", "POST", {
       name: "Another Auth Smoke",

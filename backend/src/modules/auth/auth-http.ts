@@ -364,6 +364,12 @@ export async function handleAuthRequest(
           "Verification",
           () => dependencies.emailService.sendVerificationEmail(result.verification.user, result.verification.token)
         );
+        setSessionCookie(
+          response,
+          result.session.token,
+          result.session.context.expiresAt,
+          dependencies.isProduction
+        );
       }
 
       sendJson(response, 202, { message: GENERIC_REGISTRATION_MESSAGE });

@@ -271,6 +271,22 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
 
       try {
         const result = await registerAccount(name, email, authPassword);
+        const session = await currentSession("user");
+
+        if (session) {
+          activateSession(session);
+          setAuthName("");
+          setAuthEmail("");
+          setAuthPassword("");
+          setAuthConfirmPassword("");
+          onStatusChange("Account created");
+          pushToast(
+            "success",
+            "Verification email sent. You can continue to your workspace without verifying it now."
+          );
+          return;
+        }
+
         setAuthMode("login");
         setAuthPassword("");
         setAuthConfirmPassword("");

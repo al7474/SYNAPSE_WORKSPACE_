@@ -1,24 +1,14 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
-import { Pool } from "pg";
+import { PrismaClient } from "@prisma/client";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
-const backendDir = path.resolve(currentDir, "../..");
+const backendDir = path.resolve(currentDir, "..");
 const repoRoot = path.resolve(backendDir, "..");
 
-dotenv.config({ path: path.join(backendDir, ".env") });
+dotenv.config({ path: path.join(backendDir, ".env"), override: true });
 dotenv.config({ path: path.join(repoRoot, ".env") });
-
-function requireDatabaseUrl(): string {
-  const databaseUrl = process.env.DATABASE_URL;
-
-  if (!databaseUrl) {
-    throw new Error("Missing DATABASE_URL. Set it in backend/.env or .env");
-  }
-
-  return databaseUrl;
-}
 
 type DemoNote = {
   title: string;
@@ -59,57 +49,37 @@ const demoNotes: DemoNote[] = [
 ];
 
 async function seed(): Promise<void> {
-  const pool = new Pool({ connectionString: requireDatabaseUrl() });
+  const db = new PrismaClient();
   const demoOwnerId = "demo_recruiter";
   const demoBoardName = "Recruiter Demo Board";
 
   try {
-    await pool.query("BEGIN");
+    await db.$transaction(async (transaction) => {
+      await transaction.board.deleteMany({ where: { ownerId: demoOwnerId } });
 
-    await pool.query(
-      `
-      DELETE FROM notes
-      WHERE owner_id = $1
-      `,
-      [demoOwnerId]
-    );
+      const board = await transaction.board.create({
+        data: {
+          ownerId: demoOwnerId,
+          ownerKind: "legacy",
+          name: demoBoardName,
+        },
+      });
 
-    await pool.query(
-      `
-      DELETE FROM boards
-      WHERE owner_id = $1
-      `,
-      [demoOwnerId]
-    );
+      await transaction.note.createMany({
+        data: demoNotes.map((note) => ({
+          ownerId: demoOwnerId,
+          ownerKind: "legacy",
+          boardId: board.id,
+          title: note.title,
+          content: note.content,
+          embeddingPending: true,
+        })),
+      });
+    });
 
-    const boardResult = await pool.query<{ id: number }>(
-      `
-      INSERT INTO boards (owner_id, name)
-      VALUES ($1, $2)
-      RETURNING id
-      `,
-      [demoOwnerId, demoBoardName]
-    );
-
-    const boardId = String(boardResult.rows[0].id);
-
-    for (const note of demoNotes) {
-      await pool.query(
-        `
-        INSERT INTO notes (owner_id, board_id, title, content, embedding, embedding_pending)
-        VALUES ($1, $2, $3, $4, $5::vector, TRUE)
-        `,
-        [demoOwnerId, boardId, note.title, note.content, null]
-      );
-    }
-
-    await pool.query("COMMIT");
     console.log(`Seed completed with ${demoNotes.length} demo notes in board ${demoBoardName}.`);
-  } catch (error) {
-    await pool.query("ROLLBACK");
-    throw error;
   } finally {
-    await pool.end();
+    await db.$disconnect();
   }
 }
 

@@ -1,12 +1,15 @@
 import crypto from "node:crypto";
-import type { Pool, PoolClient } from "pg";
+import { Prisma, PrismaClient } from "@prisma/client";
 
 export const GUEST_SESSION_COOKIE_NAME = "synapse_guest_session";
 
+type DbClient = PrismaClient | Prisma.TransactionClient;
+
 type GuestSessionRow = {
-  id: string | number;
-  owner_id: string;
-  expires_at: Date;
+  id: bigint;
+  ownerId: string;
+  expiresAt: Date;
+  revokedAt: Date | null;
 };
 
 export type GuestSession = {
@@ -59,7 +62,7 @@ export function clearGuestSessionCookie(secure: boolean): string {
 
 export class GuestSessionService {
   constructor(
-    private readonly pool: Pool,
+    private readonly db: PrismaClient,
     private readonly ttlMs: number
   ) {}
 
@@ -75,127 +78,104 @@ export class GuestSessionService {
     const token = crypto.randomBytes(32).toString("base64url");
     const ownerId = `guest_${crypto.randomUUID()}`;
     const expiresAt = new Date(Date.now() + this.ttlMs);
-
-    const result = await this.pool.query<GuestSessionRow>(
-      `
-      INSERT INTO guest_sessions (token_hash, owner_id, expires_at)
-      VALUES ($1, $2, $3)
-      RETURNING id, owner_id, expires_at
-      `,
-      [hashToken(token), ownerId, expiresAt]
-    );
-
-    const row = result.rows[0];
+    const row = await this.db.guestSession.create({
+      data: {
+        tokenHash: hashToken(token),
+        ownerId,
+        expiresAt,
+      },
+    });
 
     return {
       id: String(row.id),
-      ownerId: row.owner_id,
-      expiresAt: row.expires_at,
+      ownerId: row.ownerId,
+      expiresAt: row.expiresAt,
       token,
     };
   }
 
   async resolve(token: string): Promise<GuestSession | null> {
-    const result = await this.pool.query<GuestSessionRow>(
-      `
-      SELECT id, owner_id, expires_at
-      FROM guest_sessions
-      WHERE token_hash = $1 AND revoked_at IS NULL
-      `,
-      [hashToken(token)]
-    );
+    const row = await this.db.guestSession.findUnique({
+      where: { tokenHash: hashToken(token) },
+    });
 
-    const row = result.rows[0];
-
-    if (!row) {
+    if (!row || row.revokedAt) {
       return null;
     }
 
-    if (row.expires_at.getTime() <= Date.now()) {
+    if (row.expiresAt.getTime() <= Date.now()) {
       await this.revoke(token);
       return null;
     }
 
     return {
       id: String(row.id),
-      ownerId: row.owner_id,
-      expiresAt: row.expires_at,
+      ownerId: row.ownerId,
+      expiresAt: row.expiresAt,
       token,
     };
   }
 
   async revoke(token: string): Promise<boolean> {
-    const client = await this.pool.connect();
+    return this.db.$transaction(async (transaction) => {
+      const row = await transaction.guestSession.findUnique({
+        where: { tokenHash: hashToken(token) },
+      });
 
-    try {
-      await client.query("BEGIN");
-
-      const result = await client.query<GuestSessionRow>(
-        `
-        SELECT id, owner_id, expires_at
-        FROM guest_sessions
-        WHERE token_hash = $1 AND revoked_at IS NULL
-        FOR UPDATE
-        `,
-        [hashToken(token)]
-      );
-
-      const row = result.rows[0];
-
-      if (!row) {
-        await client.query("COMMIT");
+      if (!row || row.revokedAt) {
         return false;
       }
 
-      await this.deleteOwnerData(client, row.owner_id);
-      await client.query(
-        `UPDATE guest_sessions SET revoked_at = NOW() WHERE id = $1`,
-        [row.id]
-      );
-      await client.query("COMMIT");
+      const revokedAt = new Date();
+      const claimed = await transaction.guestSession.updateMany({
+        where: { id: row.id, revokedAt: null },
+        data: { revokedAt },
+      });
+
+      if (claimed.count === 0) {
+        return false;
+      }
+
+      await this.deleteOwnerData(transaction, row.ownerId);
       return true;
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   async purgeExpired(): Promise<number> {
-    const client = await this.pool.connect();
+    return this.db.$transaction(async (transaction) => {
+      const rows: GuestSessionRow[] = await transaction.guestSession.findMany({
+        where: {
+          expiresAt: { lte: new Date() },
+          revokedAt: null,
+        },
+        select: {
+          id: true,
+          ownerId: true,
+          expiresAt: true,
+          revokedAt: true,
+        },
+      });
+      let purgedCount = 0;
 
-    try {
-      await client.query("BEGIN");
+      for (const row of rows) {
+        const claimed = await transaction.guestSession.updateMany({
+          where: { id: row.id, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
 
-      const result = await client.query<GuestSessionRow>(
-        `
-        SELECT id, owner_id, expires_at
-        FROM guest_sessions
-        WHERE expires_at <= NOW() AND revoked_at IS NULL
-        FOR UPDATE
-        `
-      );
+        if (claimed.count === 0) {
+          continue;
+        }
 
-      for (const row of result.rows) {
-        await this.deleteOwnerData(client, row.owner_id);
-        await client.query(
-          `UPDATE guest_sessions SET revoked_at = NOW() WHERE id = $1`,
-          [row.id]
-        );
+        await this.deleteOwnerData(transaction, row.ownerId);
+        purgedCount += 1;
       }
 
-      await client.query("COMMIT");
-      return result.rowCount ?? 0;
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
+      return purgedCount;
+    });
   }
 
-  private async deleteOwnerData(client: PoolClient, ownerId: string): Promise<void> {
-    await client.query(`DELETE FROM boards WHERE owner_id = $1`, [ownerId]);
+  private async deleteOwnerData(client: DbClient, ownerId: string): Promise<void> {
+    await client.board.deleteMany({ where: { ownerId } });
   }
 }

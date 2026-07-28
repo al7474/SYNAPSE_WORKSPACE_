@@ -32,8 +32,9 @@ export function EmailVerificationBanner({
               Email verification pending
             </p>
             <p className="mt-1 text-[11px] leading-5 text-[#a1a1a1]">
-              {email ? `Verify ${email} to unlock sharing and collaborator access.` : "Verify your email to unlock sharing and collaborator access."}
-              {" "}Private boards and notes remain available.
+              {email
+                ? `We sent a verification email to ${email}. Verify it to unlock sharing and collaborator access, or continue using private boards and notes without verifying.`
+                : "We sent a verification email. Verify it to unlock sharing and collaborator access, or continue using private boards and notes without verifying."}
             </p>
             {error && <p className="mt-1 break-words text-[11px] text-red-300">{error}</p>}
           </div>

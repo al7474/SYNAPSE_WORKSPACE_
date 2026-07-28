@@ -1,6 +1,6 @@
 import bcrypt from "bcrypt";
 import crypto from "node:crypto";
-import type { Pool, PoolClient } from "pg";
+import { Prisma, PrismaClient, type User as PrismaUser } from "@prisma/client";
 import type {
   AuthActionTokenPurpose,
   AuthSessionContext,
@@ -13,31 +13,7 @@ const PASSWORD_MAX_BYTES = 72;
 const INVALID_LOGIN_MESSAGE = "The credentials do not match.";
 const DUMMY_PASSWORD_HASH = "$2b$12$2c6DAXfFlGAuWN7KWB31UeY.i/eBFBHo25GE2i87JFqsnVpYihZTO";
 
-type UserRow = {
-  id: string | number;
-  email: string;
-  name: string;
-  password_hash: string;
-  email_verified_at: Date | null;
-  created_at: Date;
-  updated_at: Date;
-};
-
-type SessionUserRow = {
-  session_id: string | number;
-  user_id: string | number;
-  expires_at: Date;
-  email: string;
-  name: string;
-  email_verified_at: Date | null;
-};
-
-type ActionTokenRow = {
-  id: string | number;
-  user_id: string | number;
-};
-
-type DbExecutor = Pool | PoolClient;
+type DbClient = PrismaClient | Prisma.TransactionClient;
 
 export type AuthErrorCode =
   | "INVALID_INPUT"
@@ -123,69 +99,68 @@ function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
-function toAuthUser(row: Pick<UserRow, "id" | "email" | "name" | "email_verified_at">): AuthUser {
+function toAuthUser(
+  row: Pick<PrismaUser, "id" | "email" | "name" | "emailVerifiedAt">
+): AuthUser {
   return {
     id: String(row.id),
     email: row.email,
     name: row.name,
-    emailVerifiedAt: row.email_verified_at?.toISOString() ?? null,
+    emailVerifiedAt: row.emailVerifiedAt?.toISOString() ?? null,
   };
 }
 
 function isUniqueViolation(error: unknown): boolean {
-  return (error as { code?: string } | null)?.code === "23505";
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+}
+
+function parseUserId(userId: string): bigint | null {
+  try {
+    const parsed = BigInt(userId);
+    return parsed > 0n ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 export class AuthService {
   constructor(
-    private readonly pool: Pool,
+    private readonly db: PrismaClient,
     private readonly options: AuthServiceOptions
   ) {}
 
-  async register(input: RegisterInput): Promise<{ verification: AuthTokenResult } | null> {
+  async register(
+    input: RegisterInput
+  ): Promise<{ verification: AuthTokenResult; session: AuthSessionResult } | null> {
     const { name, email } = validateRegistrationInput(input);
     const passwordHash = await bcrypt.hash(input.password, this.options.bcryptCost);
-    const client = await this.pool.connect();
 
-    try {
-      await client.query("BEGIN");
-
-      let userResult;
-
+    return this.db.$transaction(async (transaction) => {
       try {
-        userResult = await client.query<UserRow>(
-          `
-          INSERT INTO users (email, name, password_hash)
-          VALUES ($1, $2, $3)
-          RETURNING id, email, name, password_hash, email_verified_at, created_at, updated_at
-          `,
-          [email, name, passwordHash]
+        const userRow = await transaction.user.create({
+          data: {
+            email,
+            name,
+            passwordHash,
+          },
+        });
+        const user = toAuthUser(userRow);
+        const verification = await this.createActionToken(
+          user,
+          "email_verification",
+          transaction
         );
+        const session = await this.createSession(user, transaction);
+
+        return { verification, session };
       } catch (error) {
         if (isUniqueViolation(error)) {
-          await client.query("ROLLBACK");
           return null;
         }
 
         throw error;
       }
-
-      const user = toAuthUser(userResult.rows[0]);
-      const verification = await this.createActionToken(
-        user,
-        "email_verification",
-        client
-      );
-
-      await client.query("COMMIT");
-
-      return { verification };
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   async login(emailInput: string, password: string): Promise<AuthSessionResult> {
@@ -195,16 +170,15 @@ export class AuthService {
       throw new AuthError("INVALID_CREDENTIALS", INVALID_LOGIN_MESSAGE, 401);
     }
 
-    const result = await this.pool.query<UserRow>(
-      `
-      SELECT id, email, name, password_hash, email_verified_at, created_at, updated_at
-      FROM users
-      WHERE LOWER(email) = $1
-      `,
-      [email]
-    );
-    const userRow = result.rows[0];
-    const passwordHash = userRow?.password_hash ?? DUMMY_PASSWORD_HASH;
+    const userRow = await this.db.user.findFirst({
+      where: {
+        email: {
+          equals: email,
+          mode: "insensitive",
+        },
+      },
+    });
+    const passwordHash = userRow?.passwordHash ?? DUMMY_PASSWORD_HASH;
     const passwordMatches = await bcrypt.compare(password, passwordHash);
 
     if (!userRow || !passwordMatches) {
@@ -215,113 +189,86 @@ export class AuthService {
   }
 
   async resolveSession(token: string): Promise<AuthSessionContext | null> {
-    const result = await this.pool.query<SessionUserRow>(
-      `
-      SELECT
-        s.id AS session_id,
-        s.user_id,
-        s.expires_at,
-        u.email,
-        u.name,
-        u.email_verified_at
-      FROM auth_sessions s
-      INNER JOIN users u ON u.id = s.user_id
-      WHERE s.token_hash = $1
-        AND s.revoked_at IS NULL
-        AND s.expires_at > NOW()
-      `,
-      [hashToken(token)]
-    );
-    const row = result.rows[0];
+    const tokenHash = hashToken(token);
+    const now = new Date();
+    const session = await this.db.authSession.findFirst({
+      where: {
+        tokenHash,
+        revokedAt: null,
+        expiresAt: { gt: now },
+      },
+      include: { user: true },
+    });
 
-    if (!row) {
-      await this.pool.query(
-        `UPDATE auth_sessions SET revoked_at = NOW() WHERE token_hash = $1 AND expires_at <= NOW()`,
-        [hashToken(token)]
-      );
+    if (!session) {
+      await this.db.authSession.updateMany({
+        where: { tokenHash, expiresAt: { lte: now } },
+        data: { revokedAt: now },
+      });
       return null;
     }
 
-    await this.pool.query(
-      `UPDATE auth_sessions SET last_activity_at = NOW() WHERE id = $1`,
-      [row.session_id]
-    );
+    await this.db.authSession.update({
+      where: { id: session.id },
+      data: { lastActivityAt: now },
+    });
 
     return {
-      sessionId: String(row.user_id),
-      user: {
-        id: String(row.user_id),
-        email: row.email,
-        name: row.name,
-        emailVerifiedAt: row.email_verified_at?.toISOString() ?? null,
-      },
-      expiresAt: row.expires_at,
+      sessionId: String(session.userId),
+      user: toAuthUser(session.user),
+      expiresAt: session.expiresAt,
     };
   }
 
   async revokeSession(token: string): Promise<boolean> {
-    const result = await this.pool.query(
-      `
-      UPDATE auth_sessions
-      SET revoked_at = NOW()
-      WHERE token_hash = $1 AND revoked_at IS NULL
-      `,
-      [hashToken(token)]
-    );
+    const result = await this.db.authSession.updateMany({
+      where: { tokenHash: hashToken(token), revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
 
-    return (result.rowCount ?? 0) > 0;
+    return result.count > 0;
   }
 
   async purgeExpired(): Promise<{ sessions: number; actionTokens: number }> {
-    const sessionResult = await this.pool.query(
-      `
-      DELETE FROM auth_sessions
-      WHERE expires_at <= NOW() OR revoked_at IS NOT NULL
-      `
-    );
-    const actionTokenResult = await this.pool.query(
-      `
-      DELETE FROM auth_action_tokens
-      WHERE expires_at <= NOW() OR consumed_at IS NOT NULL
-      `
-    );
+    const now = new Date();
+    const sessionResult = await this.db.authSession.deleteMany({
+      where: {
+        OR: [{ expiresAt: { lte: now } }, { revokedAt: { not: null } }],
+      },
+    });
+    const actionTokenResult = await this.db.authActionToken.deleteMany({
+      where: {
+        OR: [{ expiresAt: { lte: now } }, { consumedAt: { not: null } }],
+      },
+    });
 
     return {
-      sessions: sessionResult.rowCount ?? 0,
-      actionTokens: actionTokenResult.rowCount ?? 0,
+      sessions: sessionResult.count,
+      actionTokens: actionTokenResult.count,
     };
   }
 
   async requestPasswordReset(emailInput: string): Promise<AuthTokenResult | null> {
     const email = normalizeEmail(emailInput);
-    const result = await this.pool.query<UserRow>(
-      `
-      SELECT id, email, name, password_hash, email_verified_at, created_at, updated_at
-      FROM users
-      WHERE LOWER(email) = $1
-      `,
-      [email]
-    );
-    const userRow = result.rows[0];
+    const userRow = await this.db.user.findFirst({
+      where: { email: { equals: email, mode: "insensitive" } },
+    });
 
     if (!userRow) {
       return null;
     }
 
-    const user = toAuthUser(userRow);
-    return this.createActionToken(user, "password_reset");
+    return this.createActionToken(toAuthUser(userRow), "password_reset");
   }
 
   async requestEmailVerification(userId: string): Promise<AuthTokenResult | null> {
-    const result = await this.pool.query<UserRow>(
-      `
-      SELECT id, email, name, password_hash, email_verified_at, created_at, updated_at
-      FROM users
-      WHERE id = $1
-      `,
-      [userId]
-    );
-    const userRow = result.rows[0];
+    const parsedUserId = parseUserId(userId);
+
+    if (!parsedUserId) {
+      throw new AuthError("USER_NOT_FOUND", "User not found", 404);
+    }
+
+    const userRow = await this.db.user.findUnique({ where: { id: parsedUserId } });
 
     if (!userRow) {
       throw new AuthError("USER_NOT_FOUND", "User not found", 404);
@@ -337,106 +284,93 @@ export class AuthService {
   }
 
   async verifyEmail(token: string): Promise<AuthUser> {
-    const client = await this.pool.connect();
-
-    try {
-      await client.query("BEGIN");
-      const tokenResult = await client.query<ActionTokenRow>(
-        `
-        SELECT id, user_id
-        FROM auth_action_tokens
-        WHERE token_hash = $1
-          AND purpose = 'email_verification'
-          AND consumed_at IS NULL
-          AND expires_at > NOW()
-        FOR UPDATE
-        `,
-        [hashToken(token)]
-      );
-      const tokenRow = tokenResult.rows[0];
+    return this.db.$transaction(async (transaction) => {
+      const now = new Date();
+      const tokenRow = await transaction.authActionToken.findFirst({
+        where: {
+          tokenHash: hashToken(token),
+          purpose: "email_verification",
+          consumedAt: null,
+          expiresAt: { gt: now },
+        },
+      });
 
       if (!tokenRow) {
         throw new AuthError("INVALID_TOKEN", "Verification token is invalid or expired");
       }
 
-      const userResult = await client.query<UserRow>(
-        `
-        UPDATE users
-        SET email_verified_at = COALESCE(email_verified_at, NOW()),
-            updated_at = NOW()
-        WHERE id = $1
-        RETURNING id, email, name, password_hash, email_verified_at, created_at, updated_at
-        `,
-        [tokenRow.user_id]
-      );
-      const user = userResult.rows[0];
+      const consumed = await transaction.authActionToken.updateMany({
+        where: { id: tokenRow.id, consumedAt: null },
+        data: { consumedAt: now },
+      });
+
+      if (consumed.count === 0) {
+        throw new AuthError("INVALID_TOKEN", "Verification token is invalid or expired");
+      }
+
+      const user = await transaction.user.findUnique({ where: { id: tokenRow.userId } });
 
       if (!user) {
         throw new AuthError("USER_NOT_FOUND", "User not found", 404);
       }
 
-      await client.query(
-        `UPDATE auth_action_tokens SET consumed_at = NOW() WHERE id = $1`,
-        [tokenRow.id]
-      );
-      await client.query("COMMIT");
-      return toAuthUser(user);
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
+      const verifiedUser = await transaction.user.update({
+        where: { id: user.id },
+        data: {
+          emailVerifiedAt: user.emailVerifiedAt ?? now,
+          updatedAt: now,
+        },
+      });
+
+      return toAuthUser(verifiedUser);
+    });
   }
 
   async resetPassword(token: string, password: string): Promise<void> {
     validatePassword(password);
-    const client = await this.pool.connect();
 
-    try {
-      await client.query("BEGIN");
-      const tokenResult = await client.query<ActionTokenRow>(
-        `
-        SELECT id, user_id
-        FROM auth_action_tokens
-        WHERE token_hash = $1
-          AND purpose = 'password_reset'
-          AND consumed_at IS NULL
-          AND expires_at > NOW()
-        FOR UPDATE
-        `,
-        [hashToken(token)]
-      );
-      const tokenRow = tokenResult.rows[0];
+    await this.db.$transaction(async (transaction) => {
+      const now = new Date();
+      const tokenRow = await transaction.authActionToken.findFirst({
+        where: {
+          tokenHash: hashToken(token),
+          purpose: "password_reset",
+          consumedAt: null,
+          expiresAt: { gt: now },
+        },
+      });
 
       if (!tokenRow) {
         throw new AuthError("INVALID_TOKEN", "Password reset token is invalid or expired");
       }
 
+      const consumed = await transaction.authActionToken.updateMany({
+        where: { id: tokenRow.id, consumedAt: null },
+        data: { consumedAt: now },
+      });
+
+      if (consumed.count === 0) {
+        throw new AuthError("INVALID_TOKEN", "Password reset token is invalid or expired");
+      }
+
       const passwordHash = await bcrypt.hash(password, this.options.bcryptCost);
-      await client.query(
-        `UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`,
-        [passwordHash, tokenRow.user_id]
-      );
-      await client.query(
-        `UPDATE auth_sessions SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL`,
-        [tokenRow.user_id]
-      );
-      await client.query(
-        `
-        UPDATE auth_action_tokens
-        SET consumed_at = NOW()
-        WHERE user_id = $1 AND purpose = 'password_reset' AND consumed_at IS NULL
-        `,
-        [tokenRow.user_id]
-      );
-      await client.query("COMMIT");
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
+      await transaction.user.update({
+        where: { id: tokenRow.userId },
+        data: { passwordHash, updatedAt: now },
+      });
+      await transaction.authSession.updateMany({
+        where: { userId: tokenRow.userId, revokedAt: null },
+        data: { revokedAt: now },
+      });
+      await transaction.authActionToken.updateMany({
+        where: {
+          userId: tokenRow.userId,
+          purpose: "password_reset",
+          consumedAt: null,
+        },
+        data: { consumedAt: now },
+      });
+    });
   }
 
   async changePassword(
@@ -449,68 +383,56 @@ export class AuthService {
     }
 
     validatePassword(newPassword);
-    const client = await this.pool.connect();
 
-    try {
-      await client.query("BEGIN");
-      const sessionResult = await client.query<{
-        user_id: string | number;
-        password_hash: string;
-      }>(
-        `
-        SELECT s.user_id, u.password_hash
-        FROM auth_sessions s
-        INNER JOIN users u ON u.id = s.user_id
-        WHERE s.token_hash = $1
-          AND s.revoked_at IS NULL
-          AND s.expires_at > NOW()
-        FOR UPDATE
-        `,
-        [hashToken(sessionToken)]
-      );
-      const sessionRow = sessionResult.rows[0];
+    await this.db.$transaction(async (transaction) => {
+      const session = await transaction.authSession.findFirst({
+        where: {
+          tokenHash: hashToken(sessionToken),
+          revokedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        include: { user: true },
+      });
 
-      if (!sessionRow || !(await bcrypt.compare(currentPassword, sessionRow.password_hash))) {
+      if (!session || !(await bcrypt.compare(currentPassword, session.user.passwordHash))) {
         throw new AuthError("INVALID_CREDENTIALS", "Invalid current password", 401);
       }
 
+      const now = new Date();
       const passwordHash = await bcrypt.hash(newPassword, this.options.bcryptCost);
-      await client.query(
-        `UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`,
-        [passwordHash, sessionRow.user_id]
-      );
-      await client.query(
-        `UPDATE auth_sessions SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL`,
-        [sessionRow.user_id]
-      );
-      await client.query(
-        `
-        UPDATE auth_action_tokens
-        SET consumed_at = NOW()
-        WHERE user_id = $1 AND purpose = 'password_reset' AND consumed_at IS NULL
-        `,
-        [sessionRow.user_id]
-      );
-      await client.query("COMMIT");
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
+      await transaction.user.update({
+        where: { id: session.userId },
+        data: { passwordHash, updatedAt: now },
+      });
+      await transaction.authSession.updateMany({
+        where: { userId: session.userId, revokedAt: null },
+        data: { revokedAt: now },
+      });
+      await transaction.authActionToken.updateMany({
+        where: {
+          userId: session.userId,
+          purpose: "password_reset",
+          consumedAt: null,
+        },
+        data: { consumedAt: now },
+      });
+    });
   }
-  private async createSession(user: AuthUser, executor: DbExecutor = this.pool): Promise<AuthSessionResult> {
+
+  private async createSession(
+    user: AuthUser,
+    executor: DbClient = this.db
+  ): Promise<AuthSessionResult> {
     const token = createOpaqueToken();
     const expiresAt = new Date(Date.now() + this.options.sessionTtlMs);
 
-    const result = await executor.query<{ id: string | number }>(
-      `
-      INSERT INTO auth_sessions (token_hash, user_id, expires_at)
-      VALUES ($1, $2, $3)
-      RETURNING id
-      `,
-      [hashToken(token), user.id, expiresAt]
-    );
+    await executor.authSession.create({
+      data: {
+        tokenHash: hashToken(token),
+        userId: BigInt(user.id),
+        expiresAt,
+      },
+    });
 
     return {
       token,
@@ -525,27 +447,24 @@ export class AuthService {
   private async createActionToken(
     user: AuthUser,
     purpose: AuthActionTokenPurpose,
-    executor: DbExecutor = this.pool
+    executor: DbClient = this.db
   ): Promise<AuthTokenResult> {
-    await executor.query(
-      `
-      UPDATE auth_action_tokens
-      SET consumed_at = NOW()
-      WHERE user_id = $1 AND purpose = $2 AND consumed_at IS NULL
-      `,
-      [user.id, purpose]
-    );
+    await executor.authActionToken.updateMany({
+      where: { userId: BigInt(user.id), purpose, consumedAt: null },
+      data: { consumedAt: new Date() },
+    });
 
     const token = createOpaqueToken();
     const expiresAt = new Date(Date.now() + this.options.actionTokenTtlMs);
 
-    await executor.query(
-      `
-      INSERT INTO auth_action_tokens (user_id, token_hash, purpose, expires_at)
-      VALUES ($1, $2, $3, $4)
-      `,
-      [user.id, hashToken(token), purpose, expiresAt]
-    );
+    await executor.authActionToken.create({
+      data: {
+        userId: BigInt(user.id),
+        tokenHash: hashToken(token),
+        purpose,
+        expiresAt,
+      },
+    });
 
     return { user, token };
   }

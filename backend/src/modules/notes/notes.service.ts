@@ -1,5 +1,5 @@
-import type { Pool } from "pg";
 import crypto from "node:crypto";
+import { Prisma, PrismaClient, type Board as PrismaBoard, type BoardCollaborator as PrismaBoardCollaborator, type Note as PrismaNote } from "@prisma/client";
 import type { OwnerKind, OwnerMetadata } from "../auth/auth.types.js";
 import { OpenRouterEmbeddingsService } from "../embeddings/openrouter-embeddings.service.js";
 import type {
@@ -14,31 +14,6 @@ import type {
   UpdateNoteInput,
 } from "./notes.types.js";
 
-type NoteRow = {
-  id: string | number;
-  board_id: string | number;
-  title: string;
-  content: string;
-  embedding_pending: boolean;
-  created_at: Date;
-  updated_at: Date;
-  owner_id: string;
-  semantic_score?: number | string | null;
-};
-
-type BoardRow = {
-  id: string | number;
-  owner_id: string;
-  owner_kind: OwnerKind;
-  owner_user_id: string | number | null;
-  owner_guest_session_id: string | number | null;
-  name: string;
-  share_token_hash: string | null;
-  share_permission: BoardPermission;
-  created_at: Date;
-  updated_at: Date;
-};
-
 type BoardRecord = Board & {
   shareTokenHash: string | null;
 };
@@ -48,23 +23,35 @@ type BoardAccess = {
   permission: BoardPermission;
 };
 
-type BoardCollaboratorRow = {
-  board_id: string | number;
-  invited_email: string;
-  user_id: string | number | null;
-  permission: BoardPermission;
+type NoteRow = {
+  id: bigint;
+  board_id: bigint;
+  title: string;
+  content: string;
+  embedding_pending: boolean;
   created_at: Date;
   updated_at: Date;
+  owner_id: string;
+  semantic_score?: number | string | null;
 };
 
-type OwnerPredicate = {
-  clause: string;
-  values: [string, OwnerKind, string | null, string | null];
-};
+type PrismaNoteRow = Pick<
+  PrismaNote,
+  | "id"
+  | "boardId"
+  | "title"
+  | "content"
+  | "embeddingPending"
+  | "createdAt"
+  | "updatedAt"
+  | "ownerId"
+>;
+
+type DbClient = PrismaClient | Prisma.TransactionClient;
 
 export class NotesService {
   constructor(
-    private readonly pool: Pool,
+    private readonly db: PrismaClient,
     private readonly embeddingsService: OpenRouterEmbeddingsService
   ) {}
 
@@ -81,20 +68,68 @@ export class NotesService {
     }
   }
 
-  private toBoard(row: BoardRow): BoardRecord {
+  private parseId(value: string, resourceName: string): bigint {
+    try {
+      const parsed = BigInt(value);
+
+      if (parsed > 0n) {
+        return parsed;
+      }
+    } catch {
+      // GraphQL IDs are strings, but database identifiers must be positive BIGINT values.
+    }
+
+    throw new Error(`${resourceName} not found`);
+  }
+
+  private parseOwnerReference(value: string | null | undefined, resourceName: string): bigint {
+    if (!value) {
+      throw new Error(`Missing ${resourceName} owner reference`);
+    }
+
+    return this.parseId(value, resourceName);
+  }
+
+  private buildOwnerWhere(
+    ownerId: string,
+    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+  ): Prisma.BoardWhereInput {
+    if (ownerMetadata.ownerKind === "user") {
+      return {
+        ownerKind: "user",
+        ownerUserId: ownerMetadata.ownerUserId ? BigInt(ownerMetadata.ownerUserId) : -1n,
+      };
+    }
+
+    if (ownerMetadata.ownerKind === "guest") {
+      return {
+        ownerKind: "guest",
+        ownerGuestSessionId: ownerMetadata.ownerGuestSessionId
+          ? BigInt(ownerMetadata.ownerGuestSessionId)
+          : -1n,
+      };
+    }
+
+    return {
+      ownerKind: "legacy",
+      ownerId,
+    };
+  }
+
+  private toBoard(row: PrismaBoard): BoardRecord {
     return {
       id: String(row.id),
-      ownerId: row.owner_id,
-      ownerKind: row.owner_kind,
-      ownerUserId: row.owner_user_id === null ? null : String(row.owner_user_id),
+      ownerId: row.ownerId,
+      ownerKind: row.ownerKind as OwnerKind,
+      ownerUserId: row.ownerUserId === null ? null : String(row.ownerUserId),
       ownerGuestSessionId:
-        row.owner_guest_session_id === null ? null : String(row.owner_guest_session_id),
+        row.ownerGuestSessionId === null ? null : String(row.ownerGuestSessionId),
       name: row.name,
-      shareLinkActive: row.share_token_hash !== null,
-      sharePermission: row.share_permission,
-      shareTokenHash: row.share_token_hash,
-      createdAt: row.created_at.toISOString(),
-      updatedAt: row.updated_at.toISOString(),
+      shareLinkActive: row.shareTokenHash !== null,
+      sharePermission: row.sharePermission as BoardPermission,
+      shareTokenHash: row.shareTokenHash,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
     };
   }
 
@@ -120,30 +155,6 @@ export class NotesService {
     );
   }
 
-  private buildOwnerPredicate(
-    ownerId: string,
-    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" },
-    ownerIdParameter = 1
-  ): OwnerPredicate {
-    const kindParameter = ownerIdParameter + 1;
-    const userParameter = ownerIdParameter + 2;
-    const guestParameter = ownerIdParameter + 3;
-
-    return {
-      clause: `(
-        ($${kindParameter} = 'user' AND owner_kind = 'user' AND owner_user_id = $${userParameter})
-        OR ($${kindParameter} = 'guest' AND owner_kind = 'guest' AND owner_guest_session_id = $${guestParameter})
-        OR ($${kindParameter} = 'legacy' AND owner_kind = 'legacy' AND owner_id = $${ownerIdParameter})
-      )`,
-      values: [
-        ownerId,
-        ownerMetadata.ownerKind,
-        ownerMetadata.ownerUserId ?? null,
-        ownerMetadata.ownerGuestSessionId ?? null,
-      ],
-    };
-  }
-
   private isBoardOwner(
     board: Board,
     ownerId: string,
@@ -163,14 +174,14 @@ export class NotesService {
     return board.ownerKind === "legacy" && board.ownerId === ownerId;
   }
 
-  private toBoardCollaborator(row: BoardCollaboratorRow): BoardCollaborator {
+  private toBoardCollaborator(row: PrismaBoardCollaborator): BoardCollaborator {
     return {
-      boardId: String(row.board_id),
-      email: row.invited_email,
-      userId: row.user_id === null ? null : String(row.user_id),
-      permission: row.permission,
-      createdAt: row.created_at.toISOString(),
-      updatedAt: row.updated_at.toISOString(),
+      boardId: String(row.boardId),
+      email: row.invitedEmail,
+      userId: row.userId === null ? null : String(row.userId),
+      permission: row.permission as BoardPermission,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
     };
   }
 
@@ -182,38 +193,29 @@ export class NotesService {
     requireEdit = false,
     ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
   ): Promise<BoardAccess> {
-    const boardResult = await this.pool.query(
-      `
-      SELECT id, owner_id, owner_kind, owner_user_id, owner_guest_session_id,
-        name, share_token_hash, share_permission, created_at, updated_at
-      FROM boards
-      WHERE id = $1
-      `,
-      [boardId]
-    );
+    const boardValue = this.parseId(boardId, "Board");
+    const boardRow = await this.db.board.findUnique({ where: { id: boardValue } });
 
-    if (boardResult.rowCount === 0) {
+    if (!boardRow) {
       throw new Error("Board not found");
     }
 
-    const board = this.toBoard(boardResult.rows[0] as BoardRow);
+    const board = this.toBoard(boardRow);
 
     if (this.isBoardOwner(board, ownerId, ownerMetadata)) {
       return { board, permission: "edit" };
     }
 
     if (userEmail) {
-      const collaboratorResult = await this.pool.query(
-        `
-        SELECT permission
-        FROM board_collaborators
-        WHERE board_id = $1 AND invited_email = $2
-        `,
-        [boardId, userEmail.trim().toLowerCase()]
-      );
+      const collaborator = await this.db.boardCollaborator.findFirst({
+        where: {
+          boardId: boardValue,
+          invitedEmail: userEmail.trim().toLowerCase(),
+        },
+      });
 
-      if ((collaboratorResult.rowCount ?? 0) > 0) {
-        const permission = collaboratorResult.rows[0].permission as BoardPermission;
+      if (collaborator) {
+        const permission = collaborator.permission as BoardPermission;
 
         if (requireEdit && permission !== "edit") {
           throw new Error("This board is read-only for your user");
@@ -227,10 +229,8 @@ export class NotesService {
       throw new Error("Access denied for this board");
     }
 
-    if (requireEdit) {
-      if (board.sharePermission !== "edit") {
-        throw new Error("This shared board is read-only");
-      }
+    if (requireEdit && board.sharePermission !== "edit") {
+      throw new Error("This shared board is read-only");
     }
 
     return { board, permission: board.sharePermission };
@@ -241,20 +241,11 @@ export class NotesService {
     userEmail?: string,
     ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
   ): Promise<Board[]> {
-    const ownerPredicate = this.buildOwnerPredicate(ownerId, ownerMetadata);
-    const result = await this.pool.query(
-      `
-      SELECT id, owner_id, owner_kind, owner_user_id, owner_guest_session_id,
-        name, share_token_hash, share_permission, created_at, updated_at
-      FROM boards
-      WHERE ${ownerPredicate.clause}
-      ORDER BY updated_at DESC
-      `,
-      ownerPredicate.values
-    );
-
-    const ownedBoards = result.rows.map((row) => this.toBoard(row as BoardRow));
-
+    const ownedRows = await this.db.board.findMany({
+      where: this.buildOwnerWhere(ownerId, ownerMetadata),
+      orderBy: { updatedAt: "desc" },
+    });
+    const ownedBoards = ownedRows.map((row) => this.toBoard(row));
     const normalizedEmail = userEmail?.trim().toLowerCase();
 
     if (!normalizedEmail) {
@@ -266,22 +257,18 @@ export class NotesService {
       return ownedBoards;
     }
 
-    const collaboratorBoards = await this.pool.query(
-      `
-      SELECT b.id, b.owner_id, b.owner_kind, b.owner_user_id, b.owner_guest_session_id,
-        b.name, b.share_token_hash, b.share_permission, b.created_at, b.updated_at
-      FROM boards b
-      INNER JOIN board_collaborators c ON c.board_id = b.id
-      WHERE c.invited_email = $1
-      ORDER BY b.updated_at DESC
-      `,
-      [normalizedEmail]
-    );
-
+    const collaboratorRows = await this.db.board.findMany({
+      where: {
+        collaborators: {
+          some: { invitedEmail: normalizedEmail },
+        },
+      },
+      orderBy: { updatedAt: "desc" },
+    });
     const merged = [...ownedBoards];
 
-    for (const row of collaboratorBoards.rows) {
-      const board = this.toBoard(row as BoardRow);
+    for (const row of collaboratorRows) {
+      const board = this.toBoard(row);
 
       if (!merged.some((current) => current.id === board.id)) {
         merged.push(board);
@@ -301,27 +288,24 @@ export class NotesService {
     boardId: string,
     ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
   ): Promise<BoardCollaborator[]> {
-    const ownerPredicate = this.buildOwnerPredicate(ownerId, ownerMetadata, 2);
-    const ownerCheck = await this.pool.query(
-      `SELECT 1 FROM boards WHERE id = $1 AND ${ownerPredicate.clause}`,
-      [boardId, ...ownerPredicate.values]
-    );
+    const boardValue = this.parseId(boardId, "Board");
+    const ownerCheck = await this.db.board.findFirst({
+      where: {
+        AND: [{ id: boardValue }, this.buildOwnerWhere(ownerId, ownerMetadata)],
+      },
+      select: { id: true },
+    });
 
-    if ((ownerCheck.rowCount ?? 0) === 0) {
+    if (!ownerCheck) {
       throw new Error("Board not found");
     }
 
-    const result = await this.pool.query(
-      `
-      SELECT board_id, invited_email, user_id, permission, created_at, updated_at
-      FROM board_collaborators
-      WHERE board_id = $1
-      ORDER BY updated_at DESC
-      `,
-      [boardId]
-    );
+    const rows = await this.db.boardCollaborator.findMany({
+      where: { boardId: boardValue },
+      orderBy: { updatedAt: "desc" },
+    });
 
-    return result.rows.map((row) => this.toBoardCollaborator(row as BoardCollaboratorRow));
+    return rows.map((row) => this.toBoardCollaborator(row));
   }
 
   async setBoardCollaborator(
@@ -331,13 +315,15 @@ export class NotesService {
     permission: BoardPermission,
     ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
   ): Promise<BoardCollaborator> {
-    const ownerPredicate = this.buildOwnerPredicate(ownerId, ownerMetadata, 2);
-    const ownerCheck = await this.pool.query(
-      `SELECT 1 FROM boards WHERE id = $1 AND ${ownerPredicate.clause}`,
-      [boardId, ...ownerPredicate.values]
-    );
+    const boardValue = this.parseId(boardId, "Board");
+    const ownerCheck = await this.db.board.findFirst({
+      where: {
+        AND: [{ id: boardValue }, this.buildOwnerWhere(ownerId, ownerMetadata)],
+      },
+      select: { id: true },
+    });
 
-    if ((ownerCheck.rowCount ?? 0) === 0) {
+    if (!ownerCheck) {
       throw new Error("Board not found");
     }
 
@@ -347,20 +333,25 @@ export class NotesService {
       throw new Error("Collaborator email is invalid");
     }
 
-    const result = await this.pool.query(
-      `
-      INSERT INTO board_collaborators (board_id, invited_email, permission)
-      VALUES ($1, $2, $3)
-      ON CONFLICT (board_id, invited_email)
-      DO UPDATE SET
-        permission = EXCLUDED.permission,
-        updated_at = NOW()
-      RETURNING board_id, invited_email, user_id, permission, created_at, updated_at
-      `,
-      [boardId, normalizedEmail, permission]
-    );
+    const row = await this.db.boardCollaborator.upsert({
+      where: {
+        boardId_invitedEmail: {
+          boardId: boardValue,
+          invitedEmail: normalizedEmail,
+        },
+      },
+      create: {
+        boardId: boardValue,
+        invitedEmail: normalizedEmail,
+        permission,
+      },
+      update: {
+        permission,
+        updatedAt: new Date(),
+      },
+    });
 
-    return this.toBoardCollaborator(result.rows[0] as BoardCollaboratorRow);
+    return this.toBoardCollaborator(row);
   }
 
   async removeBoardCollaborator(
@@ -369,22 +360,26 @@ export class NotesService {
     email: string,
     ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
   ): Promise<boolean> {
-    const ownerPredicate = this.buildOwnerPredicate(ownerId, ownerMetadata, 2);
-    const ownerCheck = await this.pool.query(
-      `SELECT 1 FROM boards WHERE id = $1 AND ${ownerPredicate.clause}`,
-      [boardId, ...ownerPredicate.values]
-    );
+    const boardValue = this.parseId(boardId, "Board");
+    const ownerCheck = await this.db.board.findFirst({
+      where: {
+        AND: [{ id: boardValue }, this.buildOwnerWhere(ownerId, ownerMetadata)],
+      },
+      select: { id: true },
+    });
 
-    if ((ownerCheck.rowCount ?? 0) === 0) {
+    if (!ownerCheck) {
       throw new Error("Board not found");
     }
 
-    const result = await this.pool.query(
-      `DELETE FROM board_collaborators WHERE board_id = $1 AND invited_email = $2`,
-      [boardId, email.trim().toLowerCase()]
-    );
+    const result = await this.db.boardCollaborator.deleteMany({
+      where: {
+        boardId: boardValue,
+        invitedEmail: email.trim().toLowerCase(),
+      },
+    });
 
-    return (result.rowCount ?? 0) > 0;
+    return result.count > 0;
   }
 
   async createBoard(
@@ -398,29 +393,23 @@ export class NotesService {
       throw new Error("Board name is required");
     }
 
-    const result = await this.pool.query(
-      `
-      INSERT INTO boards (
-        owner_id,
-        owner_kind,
-        owner_user_id,
-        owner_guest_session_id,
-        name
-      )
-      VALUES ($1, $2, $3, $4, $5)
-      RETURNING id, owner_id, owner_kind, owner_user_id, owner_guest_session_id,
-                name, share_token_hash, share_permission, created_at, updated_at
-      `,
-      [
+    const row = await this.db.board.create({
+      data: {
         ownerId,
-        ownerMetadata.ownerKind,
-        ownerMetadata.ownerUserId ?? null,
-        ownerMetadata.ownerGuestSessionId ?? null,
-        trimmed,
-      ]
-    );
+        ownerKind: ownerMetadata.ownerKind,
+        ownerUserId:
+          ownerMetadata.ownerKind === "user"
+            ? this.parseOwnerReference(ownerMetadata.ownerUserId, "user")
+            : null,
+        ownerGuestSessionId:
+          ownerMetadata.ownerKind === "guest"
+            ? this.parseOwnerReference(ownerMetadata.ownerGuestSessionId, "guest session")
+            : null,
+        name: trimmed,
+      },
+    });
 
-    return this.toBoard(result.rows[0] as BoardRow);
+    return this.toBoard(row);
   }
 
   async updateBoard(
@@ -435,24 +424,25 @@ export class NotesService {
       throw new Error("Board name is required");
     }
 
-    const ownerPredicate = this.buildOwnerPredicate(ownerId, ownerMetadata, 3);
-    const result = await this.pool.query(
-      `
-      UPDATE boards
-      SET name = $1,
-          updated_at = NOW()
-      WHERE id = $2 AND ${ownerPredicate.clause}
-      RETURNING id, owner_id, owner_kind, owner_user_id, owner_guest_session_id,
-        name, share_token_hash, share_permission, created_at, updated_at
-      `,
-      [trimmed, boardId, ...ownerPredicate.values]
-    );
+    const result = await this.db.board.updateMany({
+      where: {
+        AND: [{ id: this.parseId(boardId, "Board") }, this.buildOwnerWhere(ownerId, ownerMetadata)],
+      },
+      data: {
+        name: trimmed,
+        updatedAt: new Date(),
+      },
+    });
 
-    if ((result.rowCount ?? 0) === 0) {
+    if (result.count === 0) {
       throw new Error("Board not found");
     }
 
-    return this.toBoard(result.rows[0] as BoardRow);
+    const row = await this.db.board.findUniqueOrThrow({
+      where: { id: this.parseId(boardId, "Board") },
+    });
+
+    return this.toBoard(row);
   }
 
   async deleteBoard(
@@ -460,12 +450,13 @@ export class NotesService {
     boardId: string,
     ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
   ): Promise<boolean> {
-    const ownerPredicate = this.buildOwnerPredicate(ownerId, ownerMetadata, 2);
-    const result = await this.pool.query(
-      `DELETE FROM boards WHERE id = $1 AND ${ownerPredicate.clause}`,
-      [boardId, ...ownerPredicate.values]
-    );
-    return (result.rowCount ?? 0) > 0;
+    const result = await this.db.board.deleteMany({
+      where: {
+        AND: [{ id: this.parseId(boardId, "Board") }, this.buildOwnerWhere(ownerId, ownerMetadata)],
+      },
+    });
+
+    return result.count > 0;
   }
 
   async createShareLink(
@@ -475,22 +466,18 @@ export class NotesService {
     ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
   ): Promise<string> {
     const token = this.generateShareToken();
-    const tokenHash = this.hashShareToken(token);
-    const ownerPredicate = this.buildOwnerPredicate(ownerId, ownerMetadata, 4);
+    const result = await this.db.board.updateMany({
+      where: {
+        AND: [{ id: this.parseId(boardId, "Board") }, this.buildOwnerWhere(ownerId, ownerMetadata)],
+      },
+      data: {
+        shareTokenHash: this.hashShareToken(token),
+        sharePermission: permission,
+        updatedAt: new Date(),
+      },
+    });
 
-    const result = await this.pool.query(
-      `
-      UPDATE boards
-      SET share_token_hash = $1,
-          share_permission = $2,
-          updated_at = NOW()
-        WHERE id = $3 AND ${ownerPredicate.clause}
-      RETURNING id
-      `,
-      [tokenHash, permission, boardId, ...ownerPredicate.values]
-    );
-
-    if ((result.rowCount ?? 0) === 0) {
+    if (result.count === 0) {
       throw new Error("Board not found");
     }
 
@@ -502,18 +489,17 @@ export class NotesService {
     boardId: string,
     ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
   ): Promise<boolean> {
-    const ownerPredicate = this.buildOwnerPredicate(ownerId, ownerMetadata, 2);
-    const result = await this.pool.query(
-      `
-      UPDATE boards
-      SET share_token_hash = NULL,
-          updated_at = NOW()
-      WHERE id = $1 AND ${ownerPredicate.clause}
-      `,
-      [boardId, ...ownerPredicate.values]
-    );
+    const result = await this.db.board.updateMany({
+      where: {
+        AND: [{ id: this.parseId(boardId, "Board") }, this.buildOwnerWhere(ownerId, ownerMetadata)],
+      },
+      data: {
+        shareTokenHash: null,
+        updatedAt: new Date(),
+      },
+    });
 
-    return (result.rowCount ?? 0) > 0;
+    return result.count > 0;
   }
 
   async accessSharedBoard(
@@ -522,51 +508,37 @@ export class NotesService {
     token: string,
     ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
   ): Promise<SharedBoardAccess> {
-    const result = await this.pool.query(
-      `
-      SELECT id, owner_id, owner_kind, owner_user_id, owner_guest_session_id,
-        name, share_token_hash, share_permission, created_at, updated_at
-      FROM boards
-      WHERE share_token_hash = $1
-      `,
-      [this.hashShareToken(token)]
-    );
+    const row = await this.db.board.findUnique({
+      where: { shareTokenHash: this.hashShareToken(token) },
+    });
 
-    if ((result.rowCount ?? 0) === 0) {
+    if (!row) {
       throw new Error("Shared board not found");
     }
 
-    const board = this.toBoard(result.rows[0] as BoardRow);
+    const board = this.toBoard(row);
 
     if (this.isBoardOwner(board, ownerId, ownerMetadata)) {
-      return {
-        board,
-        permission: "edit",
-      };
+      return { board, permission: "edit" };
     }
 
     if (userEmail) {
-      const collaboratorResult = await this.pool.query(
-        `
-        SELECT permission
-        FROM board_collaborators
-        WHERE board_id = $1 AND invited_email = $2
-        `,
-        [board.id, userEmail.trim().toLowerCase()]
-      );
+      const collaborator = await this.db.boardCollaborator.findFirst({
+        where: {
+          boardId: board.id ? BigInt(board.id) : 0n,
+          invitedEmail: userEmail.trim().toLowerCase(),
+        },
+      });
 
-      if ((collaboratorResult.rowCount ?? 0) > 0) {
+      if (collaborator) {
         return {
           board,
-          permission: collaboratorResult.rows[0].permission as BoardPermission,
+          permission: collaborator.permission as BoardPermission,
         };
       }
     }
 
-    return {
-      board,
-      permission: board.sharePermission,
-    };
+    return { board, permission: board.sharePermission };
   }
 
   async assertBoardAccess(
@@ -597,37 +569,30 @@ export class NotesService {
       input.ownerMetadata
     );
     const embedding = await this.buildEmbedding(input.content);
+    const boardId = this.parseId(input.boardId, "Board");
 
-    const result = await this.pool.query(
-      `
-      INSERT INTO notes (
-        owner_id,
-        owner_kind,
-        owner_user_id,
-        owner_guest_session_id,
-        board_id,
-        title,
-        content,
-        embedding,
-        embedding_pending
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::vector, $9)
-      RETURNING id, board_id, title, content, embedding_pending, created_at, updated_at, owner_id
-      `,
-      [
-        access.board.ownerId,
-        access.board.ownerKind,
-        access.board.ownerUserId,
-        access.board.ownerGuestSessionId,
-        input.boardId,
-        input.title,
-        input.content,
-        embedding.vectorLiteral,
-        embedding.pending,
-      ]
-    );
+    return this.db.$transaction(async (transaction) => {
+      const row = await transaction.note.create({
+        data: {
+          ownerId: access.board.ownerId,
+          ownerKind: access.board.ownerKind,
+          ownerUserId: access.board.ownerUserId
+            ? BigInt(access.board.ownerUserId)
+            : null,
+          ownerGuestSessionId: access.board.ownerGuestSessionId
+            ? BigInt(access.board.ownerGuestSessionId)
+            : null,
+          boardId,
+          title: input.title,
+          content: input.content,
+          embeddingPending: embedding.pending,
+        },
+      });
 
-    return this.toNote(result.rows[0]);
+      await this.setEmbedding(transaction, row.id, embedding.vectorLiteral);
+      const saved = await transaction.note.findUniqueOrThrow({ where: { id: row.id } });
+      return this.toNote(saved);
+    });
   }
 
   async updateNote(input: UpdateNoteInput): Promise<Note> {
@@ -639,55 +604,47 @@ export class NotesService {
       true,
       input.ownerMetadata
     );
-    const current = await this.pool.query(
-      `SELECT id, title, content FROM notes WHERE id = $1 AND board_id = $2`,
-      [input.id, input.boardId]
-    );
+    const noteId = this.parseId(input.id, "Note");
+    const boardId = this.parseId(input.boardId, "Board");
+    const current = await this.db.note.findFirst({
+      where: { id: noteId, boardId },
+      select: { title: true, content: true },
+    });
 
-    if (current.rowCount === 0) {
+    if (!current) {
       throw new Error("Note not found");
     }
 
-    const currentRow = current.rows[0] as { title: string; content: string };
-    const nextContent = input.content ?? currentRow.content;
-    const contentChanged = nextContent !== currentRow.content;
+    const nextContent = input.content ?? current.content;
+    const contentChanged = nextContent !== current.content;
 
-    let vectorLiteral: string | null = null;
-    let embeddingPending = false;
-
-    if (contentChanged) {
-      const embedding = await this.buildEmbedding(nextContent);
-      vectorLiteral = embedding.vectorLiteral;
-      embeddingPending = embedding.pending;
+    if (!contentChanged) {
+      const row = await this.db.note.update({
+        where: { id: noteId },
+        data: {
+          title: input.title ?? undefined,
+          updatedAt: new Date(),
+        },
+      });
+      return this.toNote(row);
     }
 
-    const result = await this.pool.query(
-      `
-      UPDATE notes
-      SET title = COALESCE($1, title),
-          content = COALESCE($2, content),
-          embedding = CASE WHEN $4::boolean THEN $3::vector ELSE embedding END,
-          embedding_pending = CASE WHEN $4::boolean THEN $5 ELSE embedding_pending END,
-          updated_at = NOW()
-          WHERE id = $6 AND board_id = $7
-          RETURNING id, board_id, title, content, embedding_pending, created_at, updated_at, owner_id
-      `,
-      [
-        input.title ?? null,
-        input.content ?? null,
-        vectorLiteral,
-        contentChanged,
-        embeddingPending,
-        input.id,
-        input.boardId,
-      ]
-    );
+    const embedding = await this.buildEmbedding(nextContent);
 
-    if (result.rowCount === 0) {
-      throw new Error("Note not found");
-    }
-
-    return this.toNote(result.rows[0]);
+    return this.db.$transaction(async (transaction) => {
+      await transaction.note.update({
+        where: { id: noteId },
+        data: {
+          title: input.title ?? undefined,
+          content: nextContent,
+          embeddingPending: embedding.pending,
+          updatedAt: new Date(),
+        },
+      });
+      await this.setEmbedding(transaction, noteId, embedding.vectorLiteral);
+      const row = await transaction.note.findUniqueOrThrow({ where: { id: noteId } });
+      return this.toNote(row);
+    });
   }
 
   async listNotes(input: ListNotesInput): Promise<Note[]> {
@@ -700,17 +657,12 @@ export class NotesService {
       input.ownerMetadata
     );
 
-    const result = await this.pool.query(
-      `
-      SELECT id, board_id, title, content, embedding_pending, created_at, updated_at, owner_id
-      FROM notes
-      WHERE board_id = $1
-      ORDER BY updated_at DESC
-      `,
-      [input.boardId]
-    );
+    const rows = await this.db.note.findMany({
+      where: { boardId: this.parseId(input.boardId, "Board") },
+      orderBy: { updatedAt: "desc" },
+    });
 
-    return result.rows.map((row) => this.toNote(row as NoteRow));
+    return rows.map((row) => this.toNote(row));
   }
 
   async semanticSearch(input: SemanticSearchInput): Promise<Note[]> {
@@ -727,30 +679,27 @@ export class NotesService {
     const minSimilarity = Math.max(0, Math.min(input.minSimilarity ?? 0.55, 1));
     const embedding = await this.embeddingsService.generateEmbedding(input.query);
     const vectorLiteral = this.toPgvectorLiteral(embedding);
-
-    const result = await this.pool.query(
-      `
+    const boardId = this.parseId(input.boardId, "Board");
+    const rows = await this.db.$queryRaw<NoteRow[]>(Prisma.sql`
       SELECT
-        id,
-        title,
-        content,
-        embedding_pending,
-        created_at,
-        updated_at,
-        board_id,
-        owner_id,
-        (1 - (embedding <=> $1::vector)) AS semantic_score
-      FROM notes
-      WHERE board_id = $4
-        AND embedding IS NOT NULL
-        AND (1 - (embedding <=> $1::vector)) >= $3
-      ORDER BY embedding <=> $1::vector ASC
-      LIMIT $2
-      `,
-      [vectorLiteral, limit, minSimilarity, input.boardId]
-    );
+        "id",
+        "title",
+        "content",
+        "embedding_pending",
+        "created_at",
+        "updated_at",
+        "board_id",
+        "owner_id",
+        (1 - ("embedding" <=> ${vectorLiteral}::vector)) AS "semantic_score"
+      FROM "notes"
+      WHERE "board_id" = ${boardId}
+        AND "embedding" IS NOT NULL
+        AND (1 - ("embedding" <=> ${vectorLiteral}::vector)) >= ${minSimilarity}
+      ORDER BY "embedding" <=> ${vectorLiteral}::vector ASC
+      LIMIT ${limit}
+    `);
 
-    return result.rows.map((row) => this.toNote(row as NoteRow));
+    return rows.map((row) => this.toNote(row));
   }
 
   async deleteNote(
@@ -769,8 +718,13 @@ export class NotesService {
       true,
       ownerMetadata
     );
-    const result = await this.pool.query(`DELETE FROM notes WHERE id = $1 AND board_id = $2`, [id, boardId]);
-    return (result.rowCount ?? 0) > 0;
+    const result = await this.db.note.deleteMany({
+      where: {
+        id: this.parseId(id, "Note"),
+        boardId: this.parseId(boardId, "Board"),
+      },
+    });
+    return result.count > 0;
   }
 
   async reindexPendingEmbeddingsForBoard(
@@ -791,41 +745,26 @@ export class NotesService {
     );
 
     const safeLimit = Math.max(1, Math.min(limit, 100));
-
-    const pending = await this.pool.query(
-      `
-      SELECT id, content
-      FROM notes
-      WHERE board_id = $1 AND embedding_pending = TRUE
-      ORDER BY updated_at ASC
-      LIMIT $2
-      `,
-      [boardId, safeLimit]
-    );
-
+    const boardValue = this.parseId(boardId, "Board");
+    const pending = await this.db.note.findMany({
+      where: { boardId: boardValue, embeddingPending: true },
+      orderBy: { updatedAt: "asc" },
+      take: safeLimit,
+      select: { id: true, content: true },
+    });
     const updatedNotes: Note[] = [];
 
-    for (const row of pending.rows as Array<{ id: string | number; content: string }>) {
+    for (const row of pending) {
       const embedding = await this.buildEmbedding(row.content);
 
       if (!embedding.vectorLiteral || embedding.pending) {
         continue;
       }
 
-      const updated = await this.pool.query(
-        `
-        UPDATE notes
-        SET embedding = $1::vector,
-            embedding_pending = FALSE,
-            updated_at = NOW()
-        WHERE id = $2 AND board_id = $3
-        RETURNING id, board_id, title, content, embedding_pending, created_at, updated_at, owner_id
-        `,
-        [embedding.vectorLiteral, String(row.id), boardId]
-      );
+      const updated = await this.updateReindexedEmbedding(row.id, boardValue, embedding.vectorLiteral);
 
-      if ((updated.rowCount ?? 0) > 0) {
-        updatedNotes.push(this.toNote(updated.rows[0] as NoteRow));
+      if (updated) {
+        updatedNotes.push(updated);
       }
     }
 
@@ -834,48 +773,89 @@ export class NotesService {
 
   async reindexPendingEmbeddings(limit = 20): Promise<Note[]> {
     const safeLimit = Math.max(1, Math.min(limit, 100));
-
-    const pending = await this.pool.query(
-      `
-      SELECT id, content
-      FROM notes
-      WHERE embedding_pending = TRUE
-      ORDER BY updated_at ASC
-      LIMIT $1
-      `,
-      [safeLimit]
-    );
-
+    const pending = await this.db.note.findMany({
+      where: { embeddingPending: true },
+      orderBy: { updatedAt: "asc" },
+      take: safeLimit,
+      select: { id: true, boardId: true, content: true },
+    });
     const updatedNotes: Note[] = [];
 
-    for (const row of pending.rows as Array<{ id: string | number; content: string }>) {
+    for (const row of pending) {
       const embedding = await this.buildEmbedding(row.content);
 
       if (!embedding.vectorLiteral || embedding.pending) {
         continue;
       }
 
-      const updated = await this.pool.query(
-        `
-        UPDATE notes
-        SET embedding = $1::vector,
-            embedding_pending = FALSE,
-            updated_at = NOW()
-        WHERE id = $2
-        RETURNING id, board_id, title, content, embedding_pending, created_at, updated_at, owner_id
-        `,
-        [embedding.vectorLiteral, String(row.id)]
-      );
+      const updated = await this.updateReindexedEmbedding(row.id, row.boardId, embedding.vectorLiteral);
 
-      if ((updated.rowCount ?? 0) > 0) {
-        updatedNotes.push(this.toNote(updated.rows[0] as NoteRow));
+      if (updated) {
+        updatedNotes.push(updated);
       }
     }
 
     return updatedNotes;
   }
 
-  private toNote(row: NoteRow): Note {
+  private async setEmbedding(
+    client: DbClient,
+    noteId: bigint,
+    vectorLiteral: string | null
+  ): Promise<void> {
+    if (vectorLiteral === null) {
+      await client.$executeRaw(Prisma.sql`
+        UPDATE "notes"
+        SET "embedding" = NULL
+        WHERE "id" = ${noteId}
+      `);
+      return;
+    }
+
+    await client.$executeRaw(Prisma.sql`
+      UPDATE "notes"
+      SET "embedding" = ${vectorLiteral}::vector
+      WHERE "id" = ${noteId}
+    `);
+  }
+
+  private async updateReindexedEmbedding(
+    noteId: bigint,
+    boardId: bigint,
+    vectorLiteral: string
+  ): Promise<Note | null> {
+    const updatedCount = await this.db.$executeRaw(Prisma.sql`
+      UPDATE "notes"
+      SET "embedding" = ${vectorLiteral}::vector,
+          "embedding_pending" = FALSE,
+          "updated_at" = CURRENT_TIMESTAMP
+      WHERE "id" = ${noteId}
+        AND "board_id" = ${boardId}
+    `);
+
+    if (updatedCount === 0) {
+      return null;
+    }
+
+    const row = await this.db.note.findUnique({ where: { id: noteId } });
+    return row ? this.toNote(row) : null;
+  }
+
+  private toNote(row: PrismaNoteRow | NoteRow): Note {
+    if ("boardId" in row) {
+      return {
+        id: String(row.id),
+        boardId: String(row.boardId),
+        title: row.title,
+        content: row.content,
+        embeddingPending: row.embeddingPending,
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+        semanticScore: null,
+        ownerId: row.ownerId,
+      };
+    }
+
     return {
       id: String(row.id),
       boardId: String(row.board_id),

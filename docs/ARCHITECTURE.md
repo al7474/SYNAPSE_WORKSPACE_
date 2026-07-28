@@ -9,7 +9,12 @@
   - `embedding_pending BOOLEAN NOT NULL DEFAULT FALSE`
   - `owner_id TEXT NOT NULL`
 
-Reference migration: `backend/db/migrations/0005_align_embedding_dimension_to_1024.sql`.
+Prisma schema: `backend/prisma/schema.prisma`.
+
+The production migration history lives in `backend/prisma/migrations/`. The initial migration creates
+the complete schema, enables `pgvector`, and keeps the `vector(1024)` embedding contract. Prisma Client
+handles normal database access; parameterized raw Prisma queries are reserved for pgvector writes and
+similarity search because Prisma cannot expose `Unsupported("vector(1024)")` fields in the generated API.
 
 ## Monorepo structure
 
@@ -35,7 +40,10 @@ Keep GraphQL and browser persistence inside hooks or `lib/` modules. Components 
 ## Local infrastructure commands
 
 - `pnpm db:up`: start PostgreSQL + pgvector via `compose.yaml`.
-- `pnpm db:migrate`: apply backend SQL migrations.
+- `pnpm db:migrate`: apply committed Prisma migrations with `prisma migrate deploy`.
+- `pnpm db:migrate:dev`: create/apply a development migration after changing `schema.prisma`.
+- `pnpm db:reset`: reset the local database, apply Prisma migrations, and run the configured seed.
+- `pnpm db:seed`: run the Prisma demo seed.
 - `pnpm db:down`: stop local database.
 - `pnpm smoke:auth`: exercise the HTTP account session flow.
 - `pnpm smoke:auth:tokens`: exercise bcrypt and one-time token lifecycle rules.

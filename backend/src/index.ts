@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createPubSub, createYoga } from "graphql-yoga";
 import { Redis } from "@upstash/redis";
-import { Pool } from "pg";
+import { PrismaClient } from "@prisma/client";
 import { env } from "./config/env.js";
 import { buildSchema } from "./graphql/schema.js";
 import { OpenRouterEmbeddingsService } from "./modules/embeddings/openrouter-embeddings.service.js";
@@ -218,7 +218,8 @@ async function handleGuestSessionRequest(
 }
 
 async function bootstrap() {
-  const pool = new Pool({ connectionString: env.databaseUrl });
+  const db = new PrismaClient();
+  await db.$connect();
   const rateLimiter: RateLimiter =
     env.authRateLimitStore === "upstash"
       ? new UpstashRateLimiter(
@@ -235,8 +236,8 @@ async function bootstrap() {
     env.embeddingModel,
     env.embeddingDimension
   );
-  const guestSessions = new GuestSessionService(pool, env.guestSessionTtlMs);
-  const authService = new AuthService(pool, {
+  const guestSessions = new GuestSessionService(db, env.guestSessionTtlMs);
+  const authService = new AuthService(db, {
     sessionTtlMs: env.authSessionTtlMs,
     actionTokenTtlMs: env.authActionTokenTtlMs,
     bcryptCost: env.authBcryptCost,
@@ -249,7 +250,7 @@ async function bootstrap() {
     frontendUrl: env.authFrontendUrl,
     isProduction: env.isProduction,
   });
-  const notesService = new NotesService(pool, embeddingsService);
+  const notesService = new NotesService(db, embeddingsService);
 
   const yoga = createYoga({
     schema: buildSchema({
