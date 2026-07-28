@@ -42,7 +42,7 @@ export function WorkspaceSidebar({
   deletingBoardId,
   isDeletingDemoWorkspace,
   onClose,
-  onResetSearch,
+  onResetSearch: _onResetSearch,
   onSelectBoard,
   onDeleteBoard,
   onShareBoard,

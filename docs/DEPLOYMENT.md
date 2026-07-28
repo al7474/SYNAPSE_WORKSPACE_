@@ -133,7 +133,7 @@ The tracked environment files are limited to:
 - `backend/.env.example`
 - `frontend/.env.example`
 
-Use GitHub Environments to separate staging and production secrets. Protect `main` so changes require a Pull Request and passing CI checks. OpenRouter smoke tests that contact the real provider should run manually or against staging, not on every Pull Request.
+Use GitHub Environments to separate staging and production secrets. The repository-level Dependabot, CodeQL, and branch protection settings are described in [GITHUB_GOVERNANCE.md](GITHUB_GOVERNANCE.md). OpenRouter smoke tests that contact the real provider should run manually or against staging, not on every Pull Request; Pull Request integration tests use an injected mock instead.
 
 ## Hosting notes
 

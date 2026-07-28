@@ -10,14 +10,19 @@
     "db:down": "docker compose down",
     "db:logs": "docker compose logs -f db",
     "db:migrate": "pnpm --filter @synapse/backend db:migrate",
+    "db:migrate:deploy": "pnpm --filter @synapse/backend db:migrate:deploy",
     "db:migrate:dev": "pnpm --filter @synapse/backend db:migrate:dev",
     "db:reset": "pnpm --filter @synapse/backend db:reset",
     "db:seed": "pnpm --filter @synapse/backend db:seed",
     "dev": "pnpm -r --parallel --filter @synapse/backend --filter @synapse/frontend dev",
     "dev:backend": "pnpm --filter @synapse/backend dev",
     "dev:frontend": "pnpm --filter @synapse/frontend dev",
+    "db:generate": "pnpm --filter @synapse/backend db:generate",
+    "typecheck": "pnpm --filter @synapse/backend typecheck && pnpm --filter @synapse/frontend typecheck",
+    "lint": "eslint backend/src frontend --max-warnings=0",
     "build": "pnpm -r --filter @synapse/* build",
     "test": "pnpm --filter @synapse/backend test",
+    "test:integration": "pnpm --filter @synapse/backend test:integration",
     "smoke:embedding": "node --env-file=.env scripts/smoke/openrouter-embedding.js",
     "smoke:embedding:db": "node --env-file=.env scripts/smoke/openrouter-pgvector-e2e.js",
     "smoke:embedding:db:local": "node scripts/smoke/run-local-pgvector-e2e.js",
@@ -36,7 +41,8 @@
     "verify:env-templates": "node scripts/security/verify-env-templates.mjs",
     "secrets:scan": "node scripts/security/scan-secrets.mjs",
     "hooks:install": "node scripts/security/install-git-hooks.mjs",
-    "ci:check": "pnpm verify:env-templates && pnpm secrets:scan && pnpm test && pnpm build"
+    "ci:check": "pnpm verify:env-templates && pnpm secrets:scan && pnpm db:generate && pnpm typecheck && pnpm lint && pnpm test && pnpm build",
+    "ci:integration": "pnpm db:migrate:deploy && pnpm test:integration"
   },
   "keywords": [],
   "author": "",
@@ -46,5 +52,13 @@
     "@prisma/client": "6.19.0",
     "graphql": "^16.12.0",
     "pg": "^8.22.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@next/eslint-plugin-next": "15.0.3",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "5.1.0",
+    "globals": "^17.8.0",
+    "typescript-eslint": "^8.65.0"
   }
 }

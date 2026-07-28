@@ -245,7 +245,7 @@ export function useBoards({ sessionId, canManageSharing, onStatusChange, pushToa
       }
 
       const shouldDelete = window.confirm(
-        `Delete board \"${boardToDelete.name}\"? This will permanently delete the board and all notes inside it.`
+        `Delete board "${boardToDelete.name}"? This will permanently delete the board and all notes inside it.`
       );
 
       if (!shouldDelete) {

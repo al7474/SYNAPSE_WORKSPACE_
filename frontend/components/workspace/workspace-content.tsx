@@ -41,7 +41,7 @@ type WorkspaceContentProps = {
 };
 
 export function WorkspaceContent({
-  searchText,
+  searchText: _searchText,
   activeBoard,
   currentUserEmail,
   showBoardAccess,
@@ -61,7 +61,7 @@ export function WorkspaceContent({
   draftContent,
   lastSavedAt,
   isDeleting,
-  onSearchTextChange,
+  onSearchTextChange: _onSearchTextChange,
   onRefreshBoards,
   onCloseBoardAccess,
   onUpdateCollaboratorPermission,

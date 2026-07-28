@@ -144,6 +144,7 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
           pushToast("info", "Your session expired. Please sign in again.");
         }
       } catch {
+        return;
       }
     };
 

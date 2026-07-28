@@ -7,10 +7,13 @@
     "dev": "tsx watch src/index.ts",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
+    "db:migrate:deploy": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
     "db:reset": "prisma migrate reset --force",
     "db:seed": "prisma db seed",
     "test": "tsx --test src/modules/auth/rate-limit.service.test.ts src/modules/embeddings/openrouter-embeddings.service.test.ts",
+    "test:integration": "tsx --test src/integration/notes.integration.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js"
   },
