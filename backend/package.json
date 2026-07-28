@@ -10,7 +10,7 @@
     "db:migrate:dev": "prisma migrate dev",
     "db:reset": "prisma migrate reset --force",
     "db:seed": "prisma db seed",
-    "test": "tsx --test src/modules/auth/rate-limit.service.test.ts",
+    "test": "tsx --test src/modules/auth/rate-limit.service.test.ts src/modules/embeddings/openrouter-embeddings.service.test.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js"
   },

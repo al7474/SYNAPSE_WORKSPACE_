@@ -1,7 +1,5 @@
 import type { SessionMode, SessionState } from "@/types/workspace";
-
-const GRAPHQL_ENDPOINT =
-  process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT || "http://localhost:4000/graphql";
+import { GRAPHQL_ENDPOINT } from "./graphql-endpoint";
 const LEGACY_SESSION_ID_KEY = "synapse_session_id";
 const LEGACY_SESSION_MODE_KEY = "synapse_session_mode";
 const LEGACY_USER_EMAIL_KEY = "synapse_user_email";

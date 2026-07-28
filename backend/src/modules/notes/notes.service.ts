@@ -761,7 +761,12 @@ export class NotesService {
         continue;
       }
 
-      const updated = await this.updateReindexedEmbedding(row.id, boardValue, embedding.vectorLiteral);
+      const updated = await this.updateReindexedEmbedding(
+        row.id,
+        boardValue,
+        row.content,
+        embedding.vectorLiteral
+      );
 
       if (updated) {
         updatedNotes.push(updated);
@@ -788,7 +793,12 @@ export class NotesService {
         continue;
       }
 
-      const updated = await this.updateReindexedEmbedding(row.id, row.boardId, embedding.vectorLiteral);
+      const updated = await this.updateReindexedEmbedding(
+        row.id,
+        row.boardId,
+        row.content,
+        embedding.vectorLiteral
+      );
 
       if (updated) {
         updatedNotes.push(updated);
@@ -822,6 +832,7 @@ export class NotesService {
   private async updateReindexedEmbedding(
     noteId: bigint,
     boardId: bigint,
+    expectedContent: string,
     vectorLiteral: string
   ): Promise<Note | null> {
     const updatedCount = await this.db.$executeRaw(Prisma.sql`
@@ -831,6 +842,7 @@ export class NotesService {
           "updated_at" = CURRENT_TIMESTAMP
       WHERE "id" = ${noteId}
         AND "board_id" = ${boardId}
+        AND "content" = ${expectedContent}
     `);
 
     if (updatedCount === 0) {

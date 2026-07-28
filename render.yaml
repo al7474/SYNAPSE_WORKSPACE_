@@ -1,0 +1,44 @@
+services:
+  - type: web
+    name: synapse-backend
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: FRONTEND_ORIGIN
+        sync: false
+      - key: AUTH_PUBLIC_URL
+        sync: false
+      - key: AUTH_FRONTEND_URL
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_EMBEDDING_MODEL
+        value: nvidia/llama-nemotron-embed-vl-1b-v2:free
+      - key: OPENROUTER_EMBEDDING_DIMENSION
+        value: "1024"
+      - key: AUTH_EMAIL_PROVIDER
+        value: resend
+      - key: AUTH_EMAIL_FROM
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: AUTH_RATE_LIMIT_ENABLED
+        value: "true"
+      - key: AUTH_RATE_LIMIT_STORE
+        value: upstash
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
+      - key: AUTH_CSRF_ENABLED
+        value: "true"
+      - key: TRUST_PROXY
+        value: "true"

@@ -98,6 +98,7 @@ Do not disable cleanup or reindexing in production without documenting the opera
 | Variable | Required | Rule |
 | --- | --- | --- |
 | `NEXT_PUBLIC_GRAPHQL_ENDPOINT` | Yes | Build-time public URL ending in `/graphql`. Production builds must use the deployed backend and must not use `localhost`. |
+| `SYNAPSE_DEPLOYMENT_ENV` | No | Set to `production` for non-Vercel production builds. Vercel uses `VERCEL_ENV` automatically. Local builds use `development`. |
 
 Because this variable is embedded in the browser bundle, changing it requires a new frontend build and deployment.
 
@@ -154,9 +155,23 @@ Configure the hosting provider's health check to use `/healthz`. Use `/readyz` f
 ### Render
 
 - Run the backend as a persistent Web Service, not a short-lived serverless function.
-- Configure the service health check to use `/healthz` after that endpoint is available.
+- Use the repository `render.yaml` Blueprint or configure the Docker service manually.
+- Configure the service health check to use `/healthz`.
 - Set `NODE_ENV=production`, `PORT`, `FRONTEND_ORIGIN`, and all backend secrets in the Render environment settings.
 - Keep the service at one instance until subscription PubSub and maintenance workers are externalized.
+
+### Docker
+
+The root `Dockerfile` uses a multi-stage Node 20 build. It installs from `pnpm-lock.yaml`, generates Prisma Client, compiles the backend, and copies only the production backend deployment into the runtime image.
+
+Build and run the image locally with a backend environment file:
+
+```powershell
+docker build --tag synapse-backend:local .
+docker run --rm --env-file backend/.env -p 4000:4000 synapse-backend:local
+```
+
+The container listens on the `PORT` value provided by the environment and exposes `/healthz` for the platform health check. Never copy a real `.env` file into the image or pass secrets through Dockerfile instructions.
 
 ### Neon
 
