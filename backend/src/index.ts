@@ -548,7 +548,9 @@ async function bootstrap() {
       }
     }
 
-    void yoga(request, response).catch((error: unknown) => {
+    try {
+      yoga(request, response);
+    } catch (error: unknown) {
       logger.error("graphql.request.failed", { error, requestId });
       captureException(error, { component: "graphql", requestId });
 
@@ -557,7 +559,7 @@ async function bootstrap() {
       } else {
         response.end();
       }
-    });
+    }
   });
 
   server.listen(env.port, () => {
