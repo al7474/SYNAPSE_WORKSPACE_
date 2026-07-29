@@ -29,6 +29,13 @@ import {
 import { CSRF_HEADER_NAME, isCsrfTokenValid } from "./modules/auth/csrf.service.js";
 import { NotesService } from "./modules/notes/notes.service.js";
 import type { Note, DeletedNoteEvent } from "./modules/notes/notes.types.js";
+import { createRequestId, getRequestPath, logger } from "./observability/logger.js";
+import {
+  captureException,
+  captureMessage,
+  flushSentry,
+  initializeSentry,
+} from "./observability/sentry.js";
 
 const GUEST_SESSION_PATH = "/auth/guest-session";
 const AUTH_PATH_SET = new Set<string>(Object.values(AUTH_PATHS));
@@ -115,6 +122,55 @@ function getClientIp(request: IncomingMessage, trustProxy: boolean): string {
   return request.socket.remoteAddress || "unknown";
 }
 
+function observeRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  requestId: string,
+  requestPath: string
+): void {
+  const startedAt = Date.now();
+  let completed = false;
+
+  const complete = (termination: "finish" | "close"): void => {
+    if (completed) {
+      return;
+    }
+
+    completed = true;
+    const status = response.statusCode || 500;
+    const fields = {
+      requestId,
+      method: request.method || "UNKNOWN",
+      path: requestPath,
+      status,
+      durationMs: Date.now() - startedAt,
+      termination,
+      stream: String(response.getHeader("content-type") || "").startsWith("text/event-stream"),
+    };
+
+    if (status >= 500) {
+      logger.error("http.request.5xx", fields);
+      captureMessage("http.request.5xx", "error", fields);
+
+      if (requestPath === READINESS_PATH) {
+        logger.error("backend.not_ready", fields);
+        captureMessage("backend.not_ready", "error", fields);
+      }
+      return;
+    }
+
+    if (status >= 400) {
+      logger.warn("http.request.completed", fields);
+      return;
+    }
+
+    logger.info("http.request.completed", fields);
+  };
+
+  response.once("finish", () => complete("finish"));
+  response.once("close", () => complete("close"));
+}
+
 async function handleGuestSessionRequest(
   request: Request,
   response: ServerResponse,
@@ -188,7 +244,8 @@ async function handleGuestSessionRequest(
           60 * 60 * 1000
         );
       } catch (error) {
-        console.error("Guest session rate limiter unavailable:", error);
+        logger.error("auth.guest_session.rate_limiter_unavailable", { error });
+        captureException(error, { component: "guest_session_rate_limiter" });
         sendJson(response, 503, { error: "Authentication service temporarily unavailable" });
         return;
       }
@@ -231,8 +288,14 @@ async function handleGuestSessionRequest(
 }
 
 async function bootstrap() {
+  const sentryEnabled = initializeSentry();
+  logger.info("backend.starting", {
+    environment: env.nodeEnvironment,
+    sentryEnabled,
+  });
   const db = new PrismaClient();
   await db.$connect();
+  logger.info("backend.database.connected", { environment: env.nodeEnvironment });
   const intervals = new Set<NodeJS.Timeout>();
   const rateLimiter: RateLimiter =
     env.authRateLimitStore === "upstash"
@@ -347,6 +410,10 @@ async function bootstrap() {
   });
 
   const server = createServer((request, response) => {
+    const requestId = createRequestId();
+    const requestPath = getRequestPath(request.url);
+    response.setHeader("X-Request-ID", requestId);
+    observeRequest(request, response, requestId, requestPath);
     setSecurityHeaders(response, env.isProduction);
     const requestUrl = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
 
@@ -371,7 +438,8 @@ async function bootstrap() {
       void db.$queryRaw`SELECT 1`
         .then(() => sendHealthResponse(response, 200, { status: "ready" }))
         .catch((error: unknown) => {
-          console.error("Readiness check failed:", error);
+          logger.error("backend.readiness.query_failed", { error, requestId });
+          captureException(error, { component: "readiness", requestId });
 
           if (!response.headersSent) {
             sendHealthResponse(response, 503, { status: "not_ready" });
@@ -436,7 +504,12 @@ async function bootstrap() {
           });
 
       void handler.catch((error) => {
-        console.error("Guest session request failed:", error);
+        logger.error("auth.request.handler_failed", {
+          error,
+          requestId,
+          path: requestPath,
+        });
+        captureException(error, { component: "auth_request_handler", requestId });
 
         if (!response.headersSent) {
           sendJson(response, 500, { error: "Guest session request failed" });
@@ -475,14 +548,28 @@ async function bootstrap() {
       }
     }
 
-    void yoga(request, response);
+    void yoga(request, response).catch((error: unknown) => {
+      logger.error("graphql.request.failed", { error, requestId });
+      captureException(error, { component: "graphql", requestId });
+
+      if (!response.headersSent) {
+        sendJson(response, 500, { error: "GraphQL request failed" });
+      } else {
+        response.end();
+      }
+    });
   });
 
   server.listen(env.port, () => {
-    console.log(`Backend running on http://localhost:${env.port}/graphql`);
+    logger.info("backend.listening", {
+      port: env.port,
+      graphqlPath: "/graphql",
+      processLocalRealtime: true,
+    });
   });
 
   if (env.pendingReindexIntervalMs > 0) {
+    let pendingEmbeddingAlertActive = false;
     let running = false;
     const intervalId = setInterval(async () => {
       if (running) {
@@ -492,7 +579,33 @@ async function bootstrap() {
       running = true;
 
       try {
+        const pendingCount = await notesService.countPendingEmbeddings();
+
+        if (pendingCount >= env.embeddingPendingAlertThreshold) {
+          if (!pendingEmbeddingAlertActive) {
+            pendingEmbeddingAlertActive = true;
+            logger.warn("embeddings.pending_backlog", {
+              pendingCount,
+              threshold: env.embeddingPendingAlertThreshold,
+            });
+            captureMessage("embeddings.pending_backlog", "warning", {
+              pendingCount,
+              threshold: env.embeddingPendingAlertThreshold,
+            });
+          }
+        } else if (pendingEmbeddingAlertActive) {
+          pendingEmbeddingAlertActive = false;
+          logger.info("embeddings.pending_backlog_resolved", { pendingCount });
+        }
+
         const updatedNotes = await notesService.reindexPendingEmbeddings(env.pendingReindexBatchSize);
+
+        if (updatedNotes.length > 0) {
+          logger.info("embeddings.reindex.completed", {
+            updatedCount: updatedNotes.length,
+            pendingCount,
+          });
+        }
 
         for (const note of updatedNotes) {
           await pubSub.publish("NOTE_UPDATED", note);
@@ -503,12 +616,17 @@ async function bootstrap() {
         if (authErrorCode === "28P01") {
           clearInterval(intervalId);
           intervals.delete(intervalId);
-          console.error(
-            "Pending reindex worker disabled due to database auth error (28P01). " +
-              "Verify backend DATABASE_URL credentials and recreate local DB volume if needed."
-          );
+          logger.error("embeddings.reindex.disabled", {
+            error,
+            reason: "database_authentication_failed",
+          });
+          captureException(error, {
+            component: "embeddings_worker",
+            reason: "database_authentication_failed",
+          });
         } else {
-          console.error("Pending reindex worker error:", error);
+          logger.error("embeddings.reindex.failed", { error });
+          captureException(error, { component: "embeddings_worker" });
         }
       } finally {
         running = false;
@@ -529,7 +647,8 @@ async function bootstrap() {
       try {
         await guestSessions.purgeExpired();
       } catch (error) {
-        console.error("Guest session cleanup error:", error);
+        logger.error("auth.guest_session.cleanup_failed", { error });
+        captureException(error, { component: "guest_session_cleanup" });
       } finally {
         running = false;
       }
@@ -552,7 +671,8 @@ async function bootstrap() {
         await authService.purgeExpired();
         await rateLimiter.purgeExpired();
       } catch (error) {
-        console.error("Authentication cleanup error:", error);
+        logger.error("auth.cleanup_failed", { error });
+        captureException(error, { component: "auth_cleanup" });
       } finally {
         running = false;
       }
@@ -569,7 +689,7 @@ async function bootstrap() {
     }
 
     shutdownPromise = new Promise<void>((resolve, reject) => {
-      console.log(`Received ${signal}; shutting down backend`);
+      logger.info("backend.shutdown.started", { signal });
 
       for (const intervalId of intervals) {
         clearInterval(intervalId);
@@ -584,9 +704,15 @@ async function bootstrap() {
         resolve();
       });
     })
-      .then(() => db.$disconnect())
-      .catch((error: unknown) => {
-        console.error("Backend shutdown failed:", error);
+      .then(async () => {
+        await db.$disconnect();
+        await flushSentry();
+        logger.info("backend.shutdown.completed", { signal });
+      })
+      .catch(async (error: unknown) => {
+        logger.error("backend.shutdown.failed", { error, signal });
+        captureException(error, { component: "shutdown", signal });
+        await flushSentry();
         process.exitCode = 1;
       });
 
@@ -598,6 +724,7 @@ async function bootstrap() {
 }
 
 bootstrap().catch((error) => {
-  console.error(error);
-  process.exit(1);
+  logger.error("backend.bootstrap.failed", { error });
+  captureException(error, { component: "bootstrap" });
+  void flushSentry().finally(() => process.exit(1));
 });

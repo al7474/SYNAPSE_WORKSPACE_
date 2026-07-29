@@ -51,6 +51,7 @@ jobs:
       NODE_ENV: production
       BACKEND_DEPLOY_HOOK: ${{ secrets.BACKEND_DEPLOY_HOOK }}
       FRONTEND_DEPLOY_HOOK: ${{ secrets.FRONTEND_DEPLOY_HOOK }}
+      MIGRATION_ALERT_WEBHOOK: ${{ secrets.MIGRATION_ALERT_WEBHOOK }}
       BACKEND_URL: ${{ vars.BACKEND_URL }}
       RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
     steps:
@@ -74,10 +75,28 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Apply production-safe Prisma migrations
+        id: migrate
         run: |
           set -euo pipefail
           test -n "${DATABASE_URL:-}" || { echo "MIGRATION_DATABASE_URL is required"; exit 1; }
           pnpm --filter @synapse/backend db:migrate:deploy
+
+      - name: Notify migration failure
+        if: ${{ failure() && steps.migrate.outcome == 'failure' && env.MIGRATION_ALERT_WEBHOOK != '' }}
+        continue-on-error: true
+        env:
+          ALERT_ENVIRONMENT: staging
+        run: |
+          set -euo pipefail
+          payload="$(node -e 'process.stdout.write(JSON.stringify({ event: "migration.failed", environment: process.env.ALERT_ENVIRONMENT, releaseSha: process.env.RELEASE_SHA }))')"
+          if ! curl --fail --silent --max-time 10 \
+              --request POST "$MIGRATION_ALERT_WEBHOOK" \
+              --header "Content-Type: application/json" \
+              --data "$payload" \
+              >/dev/null 2>&1; then
+            echo "Migration failure alert could not be delivered" >&2
+            exit 1
+          fi
 
       - name: Trigger staging backend deployment
         run: |
@@ -152,6 +171,7 @@ jobs:
       NODE_ENV: production
       BACKEND_DEPLOY_HOOK: ${{ secrets.BACKEND_DEPLOY_HOOK }}
       FRONTEND_DEPLOY_HOOK: ${{ secrets.FRONTEND_DEPLOY_HOOK }}
+      MIGRATION_ALERT_WEBHOOK: ${{ secrets.MIGRATION_ALERT_WEBHOOK }}
       BACKEND_URL: ${{ vars.BACKEND_URL }}
       RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
     steps:
@@ -175,10 +195,28 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Apply production-safe Prisma migrations
+        id: migrate
         run: |
           set -euo pipefail
           test -n "${DATABASE_URL:-}" || { echo "MIGRATION_DATABASE_URL is required"; exit 1; }
           pnpm --filter @synapse/backend db:migrate:deploy
+
+      - name: Notify migration failure
+        if: ${{ failure() && steps.migrate.outcome == 'failure' && env.MIGRATION_ALERT_WEBHOOK != '' }}
+        continue-on-error: true
+        env:
+          ALERT_ENVIRONMENT: production
+        run: |
+          set -euo pipefail
+          payload="$(node -e 'process.stdout.write(JSON.stringify({ event: "migration.failed", environment: process.env.ALERT_ENVIRONMENT, releaseSha: process.env.RELEASE_SHA }))')"
+          if ! curl --fail --silent --max-time 10 \
+              --request POST "$MIGRATION_ALERT_WEBHOOK" \
+              --header "Content-Type: application/json" \
+              --data "$payload" \
+              >/dev/null 2>&1; then
+            echo "Migration failure alert could not be delivered" >&2
+            exit 1
+          fi
 
       - name: Trigger production backend deployment
         run: |

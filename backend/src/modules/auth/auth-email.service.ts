@@ -1,4 +1,5 @@
 import type { AuthUser } from "./auth.types.js";
+import { logger, redactSensitiveText } from "../../observability/logger.js";
 
 export type AuthEmailProvider = "console" | "resend";
 
@@ -75,7 +76,11 @@ export class AuthEmailService {
         throw new Error("Console email delivery is not allowed in production");
       }
 
-      console.info(`[auth-email] ${input.logLabel}: ${input.logUrl}`);
+      logger.info("auth.email.console_delivery", {
+        label: input.logLabel,
+        link: redactSensitiveText(input.logUrl),
+        tokenRedacted: true,
+      });
       return;
     }
 

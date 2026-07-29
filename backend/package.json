@@ -11,7 +11,7 @@
     "db:migrate:dev": "prisma migrate dev",
     "db:reset": "prisma migrate reset --force",
     "db:seed": "prisma db seed",
-    "test": "tsx --test src/modules/auth/rate-limit.service.test.ts src/modules/embeddings/openrouter-embeddings.service.test.ts",
+    "test": "tsx --test src/modules/auth/rate-limit.service.test.ts src/modules/embeddings/openrouter-embeddings.service.test.ts src/observability/logger.test.ts",
     "test:integration": "tsx --test src/integration/notes.integration.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json",
@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@prisma/client": "^6.19.0",
+    "@sentry/node": "^10.68.0",
     "@upstash/redis": "^1.38.0",
     "bcrypt": "^6.0.0",
     "dotenv": "^16.4.5",

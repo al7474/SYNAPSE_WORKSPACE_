@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { Prisma, PrismaClient, type Board as PrismaBoard, type BoardCollaborator as PrismaBoardCollaborator, type Note as PrismaNote } from "@prisma/client";
 import type { OwnerKind, OwnerMetadata } from "../auth/auth.types.js";
 import { OpenRouterEmbeddingsService } from "../embeddings/openrouter-embeddings.service.js";
+import { logger } from "../../observability/logger.js";
 import type {
   Board,
   BoardCollaborator,
@@ -64,7 +65,8 @@ export class NotesService {
     try {
       const embedding = await this.embeddingsService.generateEmbedding(content);
       return { vectorLiteral: this.toPgvectorLiteral(embedding), pending: false };
-    } catch {
+    } catch (error) {
+      logger.warn("embeddings.generation_failed", { error });
       return { vectorLiteral: null, pending: true };
     }
   }
@@ -841,6 +843,10 @@ export class NotesService {
     }
 
     return updatedNotes;
+  }
+
+  async countPendingEmbeddings(): Promise<number> {
+    return this.db.note.count({ where: { embeddingPending: true } });
   }
 
   private async setEmbedding(

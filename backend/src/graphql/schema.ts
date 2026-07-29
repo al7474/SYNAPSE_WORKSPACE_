@@ -3,6 +3,7 @@ import { GraphQLError } from "graphql";
 import type { OwnerMetadata } from "../modules/auth/auth.types.js";
 import type { NotesService } from "../modules/notes/notes.service.js";
 import type { BoardPermission, DeletedNoteEvent, Note } from "../modules/notes/notes.types.js";
+import { logger, redactShareToken } from "../observability/logger.js";
 
 interface GraphQLContext {
   notesService: NotesService;
@@ -24,20 +25,37 @@ export function buildSchema(pubSub: NotePubSub) {
   async function* authorizedBoardIterator<T extends { boardId: string }>(
     source: AsyncIterable<T>,
     boardId: string,
-    authorize: () => Promise<void>
+    authorize: () => Promise<void>,
+    subscription: string,
+    shareToken: string | null | undefined
   ): AsyncIterable<T> {
-    for await (const event of source) {
-      if (event.boardId !== boardId) {
-        continue;
-      }
+    const fields = {
+      subscription,
+      boardId,
+      shareToken: redactShareToken(shareToken),
+      shareTokenPresent: Boolean(shareToken),
+    };
 
-      try {
-        await authorize();
-      } catch {
-        return;
-      }
+    try {
+      for await (const event of source) {
+        if (event.boardId !== boardId) {
+          continue;
+        }
 
-      yield event;
+        try {
+          await authorize();
+        } catch {
+          logger.warn("sse.subscription.authorization_revoked", fields);
+          return;
+        }
+
+        yield event;
+      }
+    } catch (error) {
+      logger.error("sse.subscription.failed", { ...fields, error });
+      throw error;
+    } finally {
+      logger.info("sse.subscription.closed", fields);
     }
   }
 
@@ -301,7 +319,20 @@ export function buildSchema(pubSub: NotePubSub) {
             };
 
             await authorize();
-            return authorizedBoardIterator(pubSub.subscribe("NOTE_UPDATED"), args.boardId, authorize);
+            const fields = {
+              subscription: "noteUpdated",
+              boardId: args.boardId,
+              shareToken: redactShareToken(args.shareToken),
+              shareTokenPresent: Boolean(args.shareToken),
+            };
+            logger.info("sse.subscription.opened", fields);
+            return authorizedBoardIterator(
+              pubSub.subscribe("NOTE_UPDATED"),
+              args.boardId,
+              authorize,
+              "noteUpdated",
+              args.shareToken
+            );
           },
           resolve: (payload: Note) => payload,
         },
@@ -324,7 +355,20 @@ export function buildSchema(pubSub: NotePubSub) {
             };
 
             await authorize();
-            return authorizedBoardIterator(pubSub.subscribe("NOTE_DELETED"), args.boardId, authorize);
+            const fields = {
+              subscription: "noteDeleted",
+              boardId: args.boardId,
+              shareToken: redactShareToken(args.shareToken),
+              shareTokenPresent: Boolean(args.shareToken),
+            };
+            logger.info("sse.subscription.opened", fields);
+            return authorizedBoardIterator(
+              pubSub.subscribe("NOTE_DELETED"),
+              args.boardId,
+              authorize,
+              "noteDeleted",
+              args.shareToken
+            );
           },
           resolve: (payload: DeletedNoteEvent) => payload.id,
         },

@@ -19,6 +19,8 @@ import {
   readCsrfCookie,
   serializeCsrfCookie,
 } from "./csrf.service.js";
+import { captureException } from "../../observability/sentry.js";
+import { logger } from "../../observability/logger.js";
 
 export const AUTH_SESSION_COOKIE_NAME = "synapse_auth_session";
 
@@ -209,7 +211,8 @@ async function allowRateLimitedRequest(
       windowMs
     );
   } catch (error) {
-    console.error("Authentication rate limiter unavailable:", error);
+    logger.error("auth.rate_limiter.unavailable", { error });
+    captureException(error, { component: "rate_limiter", scope });
     sendJson(response, 503, { error: "Authentication service temporarily unavailable" });
     return false;
   }
@@ -237,7 +240,8 @@ function getErrorResponse(error: unknown): { statusCode: number; message: string
     return { statusCode: error.statusCode, message: error.message };
   }
 
-  console.error("Authentication request failed:", error);
+  logger.error("auth.request.failed", { error });
+  captureException(error, { component: "auth_http" });
   return { statusCode: 500, message: "Authentication request failed" };
 }
 
@@ -249,7 +253,8 @@ async function deliverEmail(
     await send();
     return true;
   } catch (error) {
-    console.error(`${action} email delivery failed:`, error);
+    logger.error("auth.email.delivery_failed", { action, error });
+    captureException(error, { component: "email_delivery", action });
     return false;
   }
 }

@@ -157,6 +157,9 @@ const resendApiKey = process.env.RESEND_API_KEY?.trim() || "";
 const authCsrfEnabled = readBoolean("AUTH_CSRF_ENABLED", true);
 const trustProxy = readBoolean("TRUST_PROXY", false);
 const openRouterApiKey = process.env.OPENROUTER_API_KEY?.trim() || "";
+const sentryDsn = process.env.SENTRY_DSN?.trim() || "";
+const sentryEnvironment = process.env.SENTRY_ENVIRONMENT?.trim() || nodeEnvironment;
+const sentryRelease = process.env.SENTRY_RELEASE?.trim() || "";
 const defaultOpenRouterApiUrl = "https://openrouter.ai/api/v1/embeddings";
 const embeddingDimension = readPositiveInteger("OPENROUTER_EMBEDDING_DIMENSION", 1024);
 
@@ -282,4 +285,11 @@ export const env = {
   authBodyMaxBytes: readPositiveInteger("AUTH_BODY_MAX_BYTES", 16_384),
   authCsrfEnabled,
   trustProxy,
+  sentryDsn,
+  sentryEnvironment,
+  sentryRelease,
+  embeddingPendingAlertThreshold: readPositiveInteger(
+    "PENDING_EMBEDDING_ALERT_THRESHOLD",
+    50
+  ),
 };

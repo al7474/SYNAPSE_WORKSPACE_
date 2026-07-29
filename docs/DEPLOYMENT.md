@@ -62,6 +62,15 @@ Never place real API keys, database passwords, session tokens, or Resend credent
 | `OPENROUTER_API_URL` | No | Defaults to the official OpenRouter embeddings endpoint. HTTP is allowed only for a local development/test host; production requires HTTPS. |
 | `OPENROUTER_EMBEDDING_MODEL` | No | Defaults to the configured free embedding model. Confirm that the selected model supports the configured dimension. |
 | `OPENROUTER_EMBEDDING_DIMENSION` | No | Defaults to `1024`, which must match the PostgreSQL `vector(1024)` contract. |
+| `PENDING_EMBEDDING_ALERT_THRESHOLD` | No | Emits an operational alert when the pending index backlog reaches this count. Defaults to `50`. |
+
+### Observability
+
+| Variable | Required | Production rule |
+| --- | --- | --- |
+| `SENTRY_DSN` | No | Enables backend error reporting. Keep the DSN in the hosting secret store even though it is not an authentication token. |
+| `SENTRY_ENVIRONMENT` | No | Defaults to `NODE_ENV`; use `staging` or `production` explicitly when both services share a project. |
+| `SENTRY_RELEASE` | No | Set to the deployed commit SHA so errors can be tied to a release. |
 
 ### Authentication, email, and rate limiting
 
@@ -118,6 +127,7 @@ Because this variable is embedded in the browser bundle, changing it requires a 
 11. Apply committed migrations with `pnpm --filter @synapse/backend db:migrate`, which runs `prisma migrate deploy`.
 12. Do not run `db:migrate:dev`, `db:reset`, or `db:seed` as part of a production release.
 13. Run the post-deployment health and smoke checks before sharing the public URL.
+14. Configure the minimum operational alerts and backup/rotation procedures in [OPERATIONS.md](OPERATIONS.md).
 
 ## GitHub and CI rules
 
@@ -170,6 +180,7 @@ Configure these **Secrets**:
 | `MIGRATION_DATABASE_URL` | Direct PostgreSQL connection used only by the migration job. |
 | `BACKEND_DEPLOY_HOOK` | Provider hook that deploys the backend `main` service. |
 | `FRONTEND_DEPLOY_HOOK` | Provider hook that deploys the frontend `main` service. |
+| `MIGRATION_ALERT_WEBHOOK` | Optional failure notification endpoint. The workflow sends only the environment, event name, and release SHA. |
 
 Configure both hooks to deploy from `main`, and disable independent provider deployments for that branch. The workflow sends the validated release SHA in `X-Synapse-Release-SHA`; provider hooks that support commit pinning should use it. If a provider hook deploys the branch tip instead, keep the `cd-main` concurrency group and do not merge another commit while a release is running.
 
@@ -253,3 +264,5 @@ The container listens on the `PORT` value provided by the environment and expose
 - If Resend is unavailable, account actions that require email report an operational failure; credentials must not be logged.
 - If Upstash is unavailable, authentication rate-limited routes fail closed rather than silently falling back to an in-memory limiter in production.
 - If PostgreSQL is unavailable, the backend must fail readiness checks and the hosting platform should keep it out of service.
+
+Operational alert rules, backup cadence, secret rotation, log retention, and the one-replica constraint are maintained in [OPERATIONS.md](OPERATIONS.md).
