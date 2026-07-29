@@ -136,6 +136,72 @@ The tracked environment files are limited to:
 
 Use GitHub Environments to separate staging and production secrets. The repository-level Dependabot, CodeQL, and branch protection settings are described in [GITHUB_GOVERNANCE.md](GITHUB_GOVERNANCE.md). OpenRouter smoke tests that contact the real provider should run manually or against staging, not on every Pull Request; Pull Request integration tests use an injected mock instead.
 
+## Continuous deployment
+
+The tracked [CD workflow](../.github/workflows/cd.yml) starts only after the `CI` workflow completes successfully for a commit on `main`. It records the exact CI commit and checks out that SHA for the migration and smoke-test steps.
+
+The release sequence is deliberately ordered:
+
+1. Apply committed Prisma migrations to staging with `pnpm --filter @synapse/backend db:migrate:deploy`.
+2. Trigger the staging backend deployment and wait for `/readyz`.
+3. Trigger the staging frontend deployment.
+4. Run the deployment smoke test against staging.
+5. Wait for the `production` GitHub Environment approval.
+6. Apply the same migrations to production, then deploy backend and frontend in that order.
+7. Run the same smoke test against production.
+
+The workflow never calls `db:seed`, `db:migrate:dev`, `db:reset`, or any destructive Prisma command. `MIGRATION_DATABASE_URL` must be the direct migration connection for the environment; keep it separate from a pooled runtime connection when the database provider requires that distinction.
+
+### GitHub Environment contract
+
+Create two GitHub Environments named exactly `staging` and `production`. Configure required reviewers on `production`; leave `staging` automatic unless the team needs a separate approval gate.
+
+For each environment, configure these **Variables**:
+
+| Variable | Value |
+| --- | --- |
+| `BACKEND_URL` | Backend origin without a path, for example `https://api-staging.example.com`. |
+| `FRONTEND_URL` | Frontend origin without a path, for example `https://staging.example.com`. |
+
+Configure these **Secrets**:
+
+| Secret | Value |
+| --- | --- |
+| `MIGRATION_DATABASE_URL` | Direct PostgreSQL connection used only by the migration job. |
+| `BACKEND_DEPLOY_HOOK` | Provider hook that deploys the backend `main` service. |
+| `FRONTEND_DEPLOY_HOOK` | Provider hook that deploys the frontend `main` service. |
+
+Configure both hooks to deploy from `main`, and disable independent provider deployments for that branch. The workflow sends the validated release SHA in `X-Synapse-Release-SHA`; provider hooks that support commit pinning should use it. If a provider hook deploys the branch tip instead, keep the `cd-main` concurrency group and do not merge another commit while a release is running.
+
+Render is configured with `autoDeploy: false` in [render.yaml](../render.yaml), so a push cannot activate a backend version before CI, migrations, and the release hook. Apply the same policy to the Vercel project: use the frontend hook for the environment or disable automatic production deploys from the Git integration.
+
+### Smoke coverage
+
+The workflow runs `node scripts/smoke/deployment-smoke.mjs`, which is also available locally as `pnpm smoke:deployment`. It verifies:
+
+- `GET /healthz` returns `200` and `{ "status": "ok" }`;
+- `GET /readyz` returns `200` and `{ "status": "ready" }`;
+- the GraphQL CORS preflight allows the configured frontend origin, credentials, `Content-Type`, and `X-CSRF-Token`;
+- `GET /auth/csrf` returns a token and sets the CSRF cookie;
+- a mutation without the CSRF header is rejected with `403`;
+- a read-only GraphQL request succeeds with no errors.
+
+The smoke does not create an account, session, board, or note. It requires `SMOKE_BASE_URL` and `SMOKE_FRONTEND_ORIGIN`, both as origins without a path.
+
+### Rollback
+
+The CD workflow does not automatically run database down migrations. Prisma migrations are expected to be additive and backward-compatible during the release window; an automatic schema rollback can destroy data or leave the previous application binary incompatible.
+
+If a staging or production smoke fails:
+
+1. Do not approve the `production` Environment, or stop the release before the next job.
+2. Record the failed release SHA and the last successful backend/frontend versions from the provider dashboards.
+3. Redeploy the previous known-good backend version and frontend version through Render and Vercel, keeping the database at its current forward-compatible schema.
+4. Re-run the deployment smoke with the environment URLs.
+5. If the migration is not backward-compatible, follow the database provider's reviewed backup/restore procedure; do not improvise a destructive `migrate reset` or an unreviewed SQL reversal.
+
+For a later retry, rerun the failed CD workflow only after the provider state and database schema have been checked. A rollback is an application-version rollback unless a separately reviewed database recovery plan explicitly says otherwise.
+
 ## Hosting notes
 
 ## Health endpoints
@@ -157,6 +223,7 @@ Configure the hosting provider's health check to use `/healthz`. Use `/readyz` f
 
 - Run the backend as a persistent Web Service, not a short-lived serverless function.
 - Use the repository `render.yaml` Blueprint or configure the Docker service manually.
+- Keep automatic deploys disabled and let `.github/workflows/cd.yml` call the protected deploy hook after migrations.
 - Configure the service health check to use `/healthz`.
 - Set `NODE_ENV=production`, `PORT`, `FRONTEND_ORIGIN`, and all backend secrets in the Render environment settings.
 - Keep the service at one instance until subscription PubSub and maintenance workers are externalized.

@@ -14,6 +14,7 @@ This folder centralizes infrastructure smoke tests to keep the project root clea
 - `auth-token-smoke.ts`: validates bcrypt storage, email-verification single use, authenticated password-change session revocation, password-reset session revocation, password replacement, and reset-token single use.
 - `graphql-subscription-noteupdated-smoke.js`: validates GraphQL `noteUpdated` subscription emits ordered events when a note is updated.
 - `autosave-realistic-smoke.js`: simulates autosave updates every 2-3 seconds for ~1-2 minutes and validates no duplicates/content loss.
+- `deployment-smoke.mjs`: validates deployed `/healthz`, `/readyz`, CORS preflight, CSRF enforcement, and a read-only GraphQL request.
 
 ## Environment variables
 
@@ -42,6 +43,7 @@ Optional:
 - `pnpm smoke:auth:tokens`
 - `pnpm smoke:graphql:subscription`
 - `pnpm smoke:autosave`
+- `pnpm smoke:deployment`
 - `pnpm smoke:foundation:local`
 - `pnpm smoke:realtime:local`
 - `pnpm smoke:db:up`
@@ -70,3 +72,15 @@ Realtime/autosave one-command suite:
 - Keep OpenRouter credentials only in `.env`.
 - `.gitignore` excludes `.env` and allows only `.env.example`.
 - If a key was exposed, rotate it immediately in OpenRouter dashboard and update `.env`.
+
+## Remote deployment smoke
+
+The deployment smoke is intentionally read-only apart from sending one invalid-CSRF request. It does not create users, sessions, boards, or notes.
+
+Set these variables to origins without a path, query, or hash:
+
+```powershell
+$env:SMOKE_BASE_URL="https://api.example.com"
+$env:SMOKE_FRONTEND_ORIGIN="https://app.example.com"
+pnpm smoke:deployment
+```

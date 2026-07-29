@@ -51,7 +51,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["scripts/e2e/**/*.mjs"],
+    files: ["scripts/e2e/**/*.mjs", "scripts/smoke/**/*.mjs"],
     languageOptions: {
       globals: globals.node,
     },

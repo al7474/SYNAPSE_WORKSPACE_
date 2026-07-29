@@ -31,3 +31,7 @@ In the repository settings, open **Settings > Branches > Rulesets** or **Setting
 - Restrict direct pushes to `main`; release automation should use a pull request or a separately reviewed deployment workflow.
 
 The repository should also enable **Allow auto-merge** only when the required checks and review policy remain enforced. Keep `master` available only if an existing deployment still uses it; new development should target `main`.
+
+## Deployment Environments
+
+Create GitHub Environments named `staging` and `production` for `.github/workflows/cd.yml`. Store deploy hooks and direct migration connection strings as environment secrets, and store backend/frontend URLs as environment variables. Require at least one reviewer for `production`; the workflow promotes a commit to production only after staging smoke tests pass and the production approval is granted. Keep provider auto-deploy disabled for the protected `main` release path.

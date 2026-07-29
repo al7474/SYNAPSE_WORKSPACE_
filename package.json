@@ -35,6 +35,7 @@
     "smoke:auth:tokens": "pnpm --filter @synapse/backend exec tsx ../scripts/smoke/auth-token-smoke.ts",
     "smoke:graphql:subscription": "node --env-file=.env scripts/smoke/graphql-subscription-noteupdated-smoke.js",
     "smoke:autosave": "node --env-file=.env scripts/smoke/autosave-realistic-smoke.js",
+    "smoke:deployment": "node scripts/smoke/deployment-smoke.mjs",
     "smoke:foundation:local": "node scripts/smoke/run-local-foundation-smokes.js",
     "smoke:realtime:local": "node scripts/smoke/run-local-realtime-smokes.js",
     "smoke:db:up": "docker run -d --name synapse-pgvector-test -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_DB=synapse_test -p 55432:5432 pgvector/pgvector:pg18",
