@@ -2,6 +2,11 @@ FROM node:20-bookworm-slim AS build
 
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
+ENV DATABASE_URL=postgresql://localhost:5432/synapse_build
+
+RUN apt-get update -y \
+	&& apt-get install -y --no-install-recommends openssl \
+	&& rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -28,6 +33,10 @@ FROM node:20-bookworm-slim AS runtime
 ENV NODE_ENV=production
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
+
+RUN apt-get update -y \
+	&& apt-get install -y --no-install-recommends openssl \
+	&& rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
