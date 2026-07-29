@@ -35,14 +35,14 @@ Create these minimum alerts:
 | --- | --- | --- | --- |
 | HTTP 5xx | Sentry message `http.request.5xx` or provider log event | At least 5 events in 5 minutes, or any sustained 5xx rate above 2% | Inspect the Sentry issue and the deployment SHA; roll back the application version if the error started after release. |
 | Backend not ready | Sentry message `backend.not_ready` plus `/readyz` monitor | Any event, or two failed readiness checks in 5 minutes | Check Render instance state and Neon connectivity; keep traffic away until `/readyz` recovers. |
-| Migration failure | Failed `Apply production-safe Prisma migrations` step in the `CD` workflow | Any failed staging or production migration job | Do not approve/promote production; inspect the Prisma error and database migration state before retrying. |
+| Migration failure | Failed `Apply production-safe Prisma migrations` step in the `CD` workflow | Any failed production migration job | Do not continue the release; inspect the Prisma error and database migration state before retrying. |
 | Embedding backlog | Sentry message `embeddings.pending_backlog` | Any event at the configured threshold, default `50` | Check OpenRouter status/key/quota and database connectivity; notes remain writable while indexing is queued. |
 
-Set the optional `MIGRATION_ALERT_WEBHOOK` secret in each GitHub Environment to notify the release team. The migration alert intentionally uses the CD job because migrations run in GitHub Actions before backend activation, not inside the web process. The notification request contains only the environment, `migration.failed`, and release SHA. Its notification step is allowed to fail, but the Prisma migration step is never hidden behind `continue-on-error`.
+Set the optional `MIGRATION_ALERT_WEBHOOK` secret in the `production` GitHub Environment to notify the release team. The migration alert intentionally uses the CD job because migrations run in GitHub Actions before backend activation, not inside the web process. The notification request contains only the environment, `migration.failed`, and release SHA. Its notification step is allowed to fail, but the Prisma migration step is never hidden behind `continue-on-error`.
 
 ## Backups and restore checks
 
-- Use separate Neon databases or branches for staging and production.
+- Use one production Neon database for the deployed application. Use the local Docker database and CI's ephemeral PostgreSQL service for development and pre-release verification. An unused Neon staging project can be retained as a manual sandbox without being part of CD.
 - Enable Neon automated backups and point-in-time recovery for production; retain at least 7 days for the portfolio deployment and increase retention when the data value requires it.
 - Verify that backups include the `notes.embedding` vector column, `embedding_pending`, users, sessions, boards, collaborators, and share-token hashes. A backup must never contain raw session, CSRF, or share tokens because the database stores hashes for those values.
 - Take a pre-release backup or confirm a recent recoverable point before a migration that changes data shape.

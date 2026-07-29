@@ -34,4 +34,4 @@ The repository should also enable **Allow auto-merge** only when the required ch
 
 ## Deployment Environments
 
-Create GitHub Environments named `staging` and `production` for `.github/workflows/cd.yml`. Store deploy hooks and direct migration connection strings as environment secrets, and store backend/frontend URLs as environment variables. Require at least one reviewer for `production`; the workflow promotes a commit to production only after staging smoke tests pass and the production approval is granted. Keep provider auto-deploy disabled for the protected `main` release path.
+Create one GitHub Environment named `production` for `.github/workflows/cd.yml`. Store deploy hooks and the direct production migration connection string as environment secrets, and store the production backend/frontend URLs as environment variables. Require at least one reviewer for `production`; the workflow promotes a commit only after CI's integration and browser checks pass and the production approval is granted. Keep provider auto-deploy disabled for the protected `main` release path.

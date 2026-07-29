@@ -69,7 +69,7 @@ Never place real API keys, database passwords, session tokens, or Resend credent
 | Variable | Required | Production rule |
 | --- | --- | --- |
 | `SENTRY_DSN` | No | Enables backend error reporting. Keep the DSN in the hosting secret store even though it is not an authentication token. |
-| `SENTRY_ENVIRONMENT` | No | Defaults to `NODE_ENV`; use `staging` or `production` explicitly when both services share a project. |
+| `SENTRY_ENVIRONMENT` | No | Defaults to `NODE_ENV`; use `production` for the deployed backend. |
 | `SENTRY_RELEASE` | No | Set to the deployed commit SHA so errors can be tied to a release. |
 
 ### Authentication, email, and rate limiting
@@ -114,7 +114,7 @@ Because this variable is embedded in the browser bundle, changing it requires a 
 
 ## Production checklist
 
-1. Create separate Neon databases or branches for local, staging, and production.
+1. Create one production Neon database; use the local Docker database for development and CI's ephemeral PostgreSQL service for pre-release checks.
 2. Enable `pgvector` and confirm that the committed Prisma migration applies successfully.
 3. Configure the backend environment with `NODE_ENV=production` and all required production variables.
 4. Configure the frontend build with `NEXT_PUBLIC_GRAPHQL_ENDPOINT=https://api.example.com/graphql`.
@@ -144,34 +144,33 @@ The tracked environment files are limited to:
 - `backend/.env.example`
 - `frontend/.env.example`
 
-Use GitHub Environments to separate staging and production secrets. The repository-level Dependabot, CodeQL, and branch protection settings are described in [GITHUB_GOVERNANCE.md](GITHUB_GOVERNANCE.md). OpenRouter smoke tests that contact the real provider should run manually or against staging, not on every Pull Request; Pull Request integration tests use an injected mock instead.
+Use the `production` GitHub Environment for release secrets. The repository-level Dependabot, CodeQL, and branch protection settings are described in [GITHUB_GOVERNANCE.md](GITHUB_GOVERNANCE.md). OpenRouter smoke tests that contact the real provider should run manually, not on every Pull Request; Pull Request integration tests use an injected mock instead.
 
 ## Continuous deployment
 
-The tracked [CD workflow](../.github/workflows/cd.yml) starts only after the `CI` workflow completes successfully for a commit on `main`. It records the exact CI commit and checks out that SHA for the migration and smoke-test steps.
+The tracked [CD workflow](../.github/workflows/cd.yml) starts only after the `CI` workflow completes successfully for a commit on `main`. It records the exact CI commit and checks out that SHA for the migration and smoke-test steps. This deployment uses one protected production environment; CI's ephemeral PostgreSQL, integration, and browser jobs provide the pre-release verification instead of a hosted staging environment.
 
 The release sequence is deliberately ordered:
 
-1. Apply committed Prisma migrations to staging with `pnpm --filter @synapse/backend db:migrate:deploy`.
-2. Trigger the staging backend deployment and wait for `/readyz`.
-3. Trigger the staging frontend deployment.
-4. Run the deployment smoke test against staging.
-5. Wait for the `production` GitHub Environment approval.
-6. Apply the same migrations to production, then deploy backend and frontend in that order.
-7. Run the same smoke test against production.
+1. Run CI on the commit, including integration and browser E2E checks against ephemeral PostgreSQL.
+2. Wait for the required approval on the `production` GitHub Environment.
+3. Apply committed Prisma migrations to the production Neon database with `pnpm --filter @synapse/backend db:migrate:deploy`.
+4. Trigger the production backend deployment and wait for `/readyz`.
+5. Trigger the production frontend deployment.
+6. Run the deployment smoke test against production.
 
 The workflow never calls `db:seed`, `db:migrate:dev`, `db:reset`, or any destructive Prisma command. `MIGRATION_DATABASE_URL` must be the direct migration connection for the environment; keep it separate from a pooled runtime connection when the database provider requires that distinction.
 
 ### GitHub Environment contract
 
-Create two GitHub Environments named exactly `staging` and `production`. Configure required reviewers on `production`; leave `staging` automatic unless the team needs a separate approval gate.
+Create one GitHub Environment named exactly `production` and configure required reviewers for it. No hosted staging Environment is required for this deployment model.
 
 For each environment, configure these **Variables**:
 
 | Variable | Value |
 | --- | --- |
-| `BACKEND_URL` | Backend origin without a path, for example `https://api-staging.example.com`. |
-| `FRONTEND_URL` | Frontend origin without a path, for example `https://staging.example.com`. |
+| `BACKEND_URL` | Production backend origin without a path, for example `https://api.example.com`. |
+| `FRONTEND_URL` | Production frontend origin without a path, for example `https://app.example.com`. |
 
 Configure these **Secrets**:
 
@@ -203,12 +202,12 @@ The smoke does not create an account, session, board, or note. It requires `SMOK
 
 The CD workflow does not automatically run database down migrations. Prisma migrations are expected to be additive and backward-compatible during the release window; an automatic schema rollback can destroy data or leave the previous application binary incompatible.
 
-If a staging or production smoke fails:
+If the production smoke fails:
 
-1. Do not approve the `production` Environment, or stop the release before the next job.
+1. Stop the release before sharing the public URL if the failure occurs before activation.
 2. Record the failed release SHA and the last successful backend/frontend versions from the provider dashboards.
 3. Redeploy the previous known-good backend version and frontend version through Render and Vercel, keeping the database at its current forward-compatible schema.
-4. Re-run the deployment smoke with the environment URLs.
+4. Re-run the deployment smoke with the production URLs.
 5. If the migration is not backward-compatible, follow the database provider's reviewed backup/restore procedure; do not improvise a destructive `migrate reset` or an unreviewed SQL reversal.
 
 For a later retry, rerun the failed CD workflow only after the provider state and database schema have been checked. A rollback is an application-version rollback unless a separately reviewed database recovery plan explicitly says otherwise.
@@ -254,7 +253,7 @@ The container listens on the `PORT` value provided by the environment and expose
 
 ### Neon
 
-- Use a production database separate from staging.
+- Use one production database for the deployed application. The existing Neon staging project may remain as an optional manual sandbox, but it is not part of the release workflow.
 - Enable automatic backups and review retention before launch.
 - Use a pooled runtime connection only when Prisma is configured for it; use a direct connection for migrations when required by the provider.
 
