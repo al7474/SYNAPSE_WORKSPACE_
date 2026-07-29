@@ -57,9 +57,6 @@ validateGraphqlEndpointForBuild();
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
   async headers() {
     return [
       {
