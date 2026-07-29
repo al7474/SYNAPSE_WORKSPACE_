@@ -10,7 +10,7 @@ This folder centralizes infrastructure smoke tests to keep the project root clea
 - `resilience-fallback-smoke.js`: simulates OpenRouter failures (invalid key and timeout) and verifies `embedding_pending=true` fallback writes.
 - `graphql-base-smoke.js`: validates GraphQL base operations (`createNote`, `updateNote`, `listNotes`).
 - `prisma-graphql-crud-smoke.js`: validates board and note CRUD through the real Prisma-backed GraphQL backend.
-- `auth-account-smoke.js`: validates generic registration responses, cookies, session lookup, typed GraphQL ownership, unverified private access, login, logout, authenticated password-change revocation, recovery response privacy, and invalid-password rejection.
+- `auth-account-smoke.js`: validates registration, duplicate-email rejection, cookies, session lookup, typed GraphQL ownership, unverified private access, login, logout, authenticated password-change revocation, recovery response privacy, and invalid-password rejection.
 - `auth-token-smoke.ts`: validates bcrypt storage, email-verification single use, authenticated password-change session revocation, password-reset session revocation, password replacement, and reset-token single use.
 - `graphql-subscription-noteupdated-smoke.js`: validates GraphQL `noteUpdated` subscription emits ordered events when a note is updated.
 - `autosave-realistic-smoke.js`: simulates autosave updates every 2-3 seconds for ~1-2 minutes and validates no duplicates/content loss.

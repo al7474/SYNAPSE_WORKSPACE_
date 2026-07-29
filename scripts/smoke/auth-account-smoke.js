@@ -207,12 +207,13 @@ async function main() {
       email,
       password: "different-password-456",
     });
-    assert(duplicateRegistration.response.status === 202, "Duplicate registration leaked account state");
+    assert(duplicateRegistration.response.status === 409, "Duplicate registration was not rejected");
     assert(
-      JSON.stringify(duplicateRegistration.payload) === JSON.stringify(registered.payload),
-      "Registration responses are not generic"
+      duplicateRegistration.payload.error ===
+        "An account with this email already exists. Please sign in instead.",
+      "Duplicate registration returned the wrong message"
     );
-    assert(!duplicateRegistration.payload.user, "Registration exposed account data");
+    assert(!duplicateRegistration.response.headers.get("set-cookie"), "Duplicate registration started a session");
 
     const firstLogin = await requestJson("/auth/login", "POST", { email, password });
     assert(firstLogin.response.status === 200, "Login after registration failed");

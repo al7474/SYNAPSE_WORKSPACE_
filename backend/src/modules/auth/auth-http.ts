@@ -193,6 +193,8 @@ const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const ACTION_WINDOW_MS = 60 * 60 * 1000;
 const GENERIC_REGISTRATION_MESSAGE =
   "If this email can be registered, verification instructions will be sent.";
+const DUPLICATE_REGISTRATION_MESSAGE =
+  "An account with this email already exists. Please sign in instead.";
 
 async function allowRateLimitedRequest(
   response: ServerResponse,
@@ -368,19 +370,21 @@ export async function handleAuthRequest(
       }
 
       const result = await dependencies.authService.register(input);
-      if (result) {
-        void deliverEmail(
-          "Verification",
-          () => dependencies.emailService.sendVerificationEmail(result.verification.user, result.verification.token)
-        );
-        setSessionCookie(
-          response,
-          result.session.token,
-          result.session.context.expiresAt,
-          dependencies.isProduction
-        );
+      if (!result) {
+        sendJson(response, 409, { error: DUPLICATE_REGISTRATION_MESSAGE });
+        return;
       }
 
+      void deliverEmail(
+        "Verification",
+        () => dependencies.emailService.sendVerificationEmail(result.verification.user, result.verification.token)
+      );
+      setSessionCookie(
+        response,
+        result.session.token,
+        result.session.context.expiresAt,
+        dependencies.isProduction
+      );
       sendJson(response, 202, { message: GENERIC_REGISTRATION_MESSAGE });
       return;
     }
