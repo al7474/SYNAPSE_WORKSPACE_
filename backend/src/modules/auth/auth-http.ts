@@ -115,11 +115,15 @@ export function serializeAuthSessionCookie(
   maxAgeSeconds: number,
   secure: boolean
 ): string {
-  return `${AUTH_SESSION_COOKIE_NAME}=${encodeURIComponent(token)}; Max-Age=${maxAgeSeconds}; Path=/; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
+  const sameSite = secure ? "None" : "Lax";
+
+  return `${AUTH_SESSION_COOKIE_NAME}=${encodeURIComponent(token)}; Max-Age=${maxAgeSeconds}; Path=/; HttpOnly; SameSite=${sameSite}${secure ? "; Secure" : ""}`;
 }
 
 export function clearAuthSessionCookie(secure: boolean): string {
-  return `${AUTH_SESSION_COOKIE_NAME}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
+  const sameSite = secure ? "None" : "Lax";
+
+  return `${AUTH_SESSION_COOKIE_NAME}=; Max-Age=0; Path=/; HttpOnly; SameSite=${sameSite}${secure ? "; Secure" : ""}`;
 }
 
 async function readJsonBody(request: Request, maxBytes: number): Promise<JsonObject> {
