@@ -56,7 +56,7 @@ jobs:
       RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
     steps:
       - name: Checkout CI commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.prepare.outputs.release_sha }}
 
@@ -146,7 +146,7 @@ jobs:
       SMOKE_FRONTEND_ORIGIN: ${{ vars.FRONTEND_URL }}
     steps:
       - name: Checkout CI commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.prepare.outputs.release_sha }}
 
