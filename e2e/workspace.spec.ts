@@ -60,6 +60,18 @@ test("creates a note and autosaves title and content", async ({ page }) => {
   await expect(page.getByLabel("Note description")).toHaveValue("launch roadmap");
 });
 
+test("opens the newly created note when the board already has notes", async ({ page }) => {
+  await enterDemo(page);
+  await createSavedNote(page, "Existing note", "Existing content");
+  await page.getByRole("button", { name: "Close note and return to board" }).click();
+
+  await expect(page.getByTestId("create-note")).toBeVisible();
+  await page.getByTestId("create-note").click();
+
+  await expect(page.getByLabel("Note title")).toHaveValue("Untitled Note");
+  await expect(page.getByLabel("Note description")).toHaveValue("");
+});
+
 test("returns semantically matching notes for a search query", async ({ page }) => {
   await enterDemo(page);
   await createSavedNote(page, "Semantic roadmap", "launch roadmap");

@@ -412,6 +412,10 @@ export function useNotes({
       );
 
       const createdNote = data.createNote;
+      setNotes((previousNotes) => [
+        createdNote,
+        ...previousNotes.filter((note) => note.id !== createdNote.id),
+      ]);
       setSelectedId(createdNote.id);
       setDraftTitle(createdNote.title);
       setDraftContent(createdNote.content);
