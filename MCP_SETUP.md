@@ -32,12 +32,13 @@ an OAuth 2.1 Authorization Code + PKCE flow (RFC 6749 + RFC 7636) that Synapse
 itself implements as both the authorization server and the resource server.
 There is no separate identity provider: a Synapse account **is** the identity.
 
-1. Open this repository in VS Code and allow the `synapse-remote` MCP server
-   when prompted.
-2. When VS Code asks for the **Synapse remote MCP endpoint**, enter
-   `http://localhost:4000/mcp` for a local backend, or
-   `https://api.example.com/mcp` for a deployed backend.
-3. VS Code discovers the OAuth endpoints automatically from
+1. Open this repository in VS Code and allow the `synapse-production` MCP server
+   when prompted. Its deployed endpoint is already defined in
+   `.vscode/mcp.json`.
+2. For a different backend, change the server URL to its `/mcp` endpoint before
+   starting the MCP connection.
+3. Do not open the authorization URL manually. VS Code discovers the OAuth
+   endpoints automatically from
    `GET /.well-known/oauth-protected-resource/mcp` and
    `GET /.well-known/oauth-authorization-server`, dynamically registers itself
    as an OAuth client (`POST /oauth/register`), and opens your system browser
@@ -50,6 +51,12 @@ There is no separate identity provider: a Synapse account **is** the identity.
 5. VS Code exchanges the code for an access token (`POST /oauth/token`) using
    the PKCE code verifier it generated, and attaches
    `Authorization: Bearer <token>` to every subsequent `POST /mcp` request.
+
+The authorization page redirects to a temporary loopback callback owned by VS
+Code. If the URL is opened outside a VS Code-initiated MCP connection, the
+browser can show `Failed to load page` or `ERR_CONNECTION_REFUSED` because no
+local callback listener is running. This does not indicate that the Synapse
+login failed.
 
 ### Scopes and permissions
 
@@ -122,4 +129,3 @@ Then sign in to that same deployed frontend and provide its
 GraphQL requests and must be reachable from your computer. Server-to-server
 MCP requests do not require frontend CORS configuration, but HTTPS and the
 existing authentication/session protections must remain enabled.
-

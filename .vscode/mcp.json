@@ -14,10 +14,6 @@
         "SYNAPSE_SESSION_TOKEN": "${input:synapseSessionToken}"
       }
     },
-    "synapse-remote": {
-      "type": "http",
-      "url": "${input:synapseRemoteMcpUrl}"
-    },
     "synapse-production": {
       "type": "http",
       "url": "https://synapse-workspace.onrender.com/mcp"
@@ -35,12 +31,6 @@
       "id": "synapseSessionToken",
       "description": "Synapse authentication session token",
       "password": true
-    },
-    {
-      "type": "promptString",
-      "id": "synapseRemoteMcpUrl",
-      "description": "Synapse remote MCP endpoint (backend origin + /mcp)",
-      "default": "http://localhost:4000/mcp"
     }
   ]
 }
