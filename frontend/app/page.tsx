@@ -124,8 +124,13 @@ export default function HomePage() {
     auth.setAuthError("");
   };
 
-  if (auth.isHydratingSession) {
-    return <SessionLoadingScreen />;
+  if (auth.isHydratingSession || auth.sessionHydrationError) {
+    return (
+      <SessionLoadingScreen
+        error={auth.sessionHydrationError || undefined}
+        onRetry={auth.sessionHydrationError ? auth.retrySessionHydration : undefined}
+      />
+    );
   }
 
   if (!auth.sessionId || !auth.sessionMode) {

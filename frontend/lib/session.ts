@@ -49,6 +49,7 @@ type CsrfResponse = {
 
 let csrfToken: string | null = null;
 let csrfRequest: Promise<string> | null = null;
+const SESSION_RESTORE_TIMEOUT_MS = 15_000;
 
 function getBackendOrigin(): string {
   const baseUrl = typeof window === "undefined" ? "http://localhost:3000" : window.location.origin;
@@ -111,6 +112,17 @@ async function fetchWithCsrf(input: RequestInfo | URL, init: RequestInit): Promi
   return fetch(input, { ...init, headers });
 }
 
+async function fetchSession(input: RequestInfo | URL, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), SESSION_RESTORE_TIMEOUT_MS);
+
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
 function toAccountSessionState(payload: AccountSessionResponse): SessionState {
   return {
     sessionId: payload.sessionId,
@@ -122,7 +134,7 @@ function toAccountSessionState(payload: AccountSessionResponse): SessionState {
 
 export async function currentSession(mode?: SessionMode): Promise<SessionState | null> {
   if (mode !== "guest") {
-    const accountResponse = await fetch(getAuthEndpoint("/auth/session"), {
+    const accountResponse = await fetchSession(getAuthEndpoint("/auth/session"), {
       method: "GET",
       credentials: "include",
       headers: { Accept: "application/json" },
@@ -143,7 +155,7 @@ export async function currentSession(mode?: SessionMode): Promise<SessionState |
     }
   }
 
-  const guestResponse = await fetch(getGuestSessionEndpoint(), {
+  const guestResponse = await fetchSession(getGuestSessionEndpoint(), {
     method: "GET",
     credentials: "include",
     headers: { Accept: "application/json" },

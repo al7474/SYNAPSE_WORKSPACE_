@@ -34,6 +34,8 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
   const [authError, setAuthError] = useState("");
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [isHydratingSession, setIsHydratingSession] = useState(true);
+  const [sessionHydrationError, setSessionHydrationError] = useState("");
+  const [hydrationAttempt, setHydrationAttempt] = useState(0);
 
   const clearLocalSession = useCallback(() => {
     clearLegacySessionStorage();
@@ -106,12 +108,20 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
 
         if (!isCancelled && session) {
           activateSession(session);
+          setSessionHydrationError("");
         } else if (!isCancelled) {
           clearLocalSession();
         }
       } catch (error) {
         if (!isCancelled) {
-          onStatusChange(error instanceof Error ? error.message : "Unable to restore session");
+          const message =
+            error instanceof DOMException && error.name === "AbortError"
+              ? "The secure workspace is waking up. Please retry in a moment."
+              : error instanceof Error
+                ? error.message
+                : "Unable to restore session";
+          setSessionHydrationError(message);
+          onStatusChange(message);
         }
       } finally {
         if (!isCancelled) {
@@ -125,7 +135,13 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
     return () => {
       isCancelled = true;
     };
-  }, [activateSession, clearLocalSession, onStatusChange]);
+  }, [activateSession, clearLocalSession, hydrationAttempt, onStatusChange]);
+
+  const retrySessionHydration = useCallback(() => {
+    setSessionHydrationError("");
+    setIsHydratingSession(true);
+    setHydrationAttempt((attempt) => attempt + 1);
+  }, []);
 
   useEffect(() => {
     if (!sessionId || !sessionMode) {
@@ -352,6 +368,8 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
     authError,
     isSigningIn,
     isHydratingSession,
+    sessionHydrationError,
+    retrySessionHydration,
     setAuthMode,
     setAuthName,
     setAuthEmail,
