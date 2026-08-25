@@ -17,6 +17,10 @@
     "synapse-remote": {
       "type": "http",
       "url": "${input:synapseRemoteMcpUrl}"
+    },
+    "synapse-production": {
+      "type": "http",
+      "url": "https://synapse-workspace.onrender.com/mcp"
     }
   },
   "inputs": [
