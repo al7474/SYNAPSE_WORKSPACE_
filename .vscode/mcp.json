@@ -1,0 +1,42 @@
+{
+  "servers": {
+    "synapse": {
+      "command": "pnpm",
+      "args": [
+        "--dir",
+        "${workspaceFolder}",
+        "--filter",
+        "@synapse/mcp",
+        "dev"
+      ],
+      "env": {
+        "SYNAPSE_API_URL": "${input:synapseApiUrl}",
+        "SYNAPSE_SESSION_TOKEN": "${input:synapseSessionToken}"
+      }
+    },
+    "synapse-remote": {
+      "type": "http",
+      "url": "${input:synapseRemoteMcpUrl}"
+    }
+  },
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "synapseApiUrl",
+      "description": "Synapse GraphQL URL",
+      "default": "http://localhost:4000/graphql"
+    },
+    {
+      "type": "promptString",
+      "id": "synapseSessionToken",
+      "description": "Synapse authentication session token",
+      "password": true
+    },
+    {
+      "type": "promptString",
+      "id": "synapseRemoteMcpUrl",
+      "description": "Synapse remote MCP endpoint (backend origin + /mcp)",
+      "default": "http://localhost:4000/mcp"
+    }
+  ]
+}

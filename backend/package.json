@@ -11,13 +11,14 @@
     "db:migrate:dev": "prisma migrate dev",
     "db:reset": "prisma migrate reset --force",
     "db:seed": "prisma db seed",
-    "test": "tsx --test src/modules/auth/auth-http.test.ts src/modules/auth/rate-limit.service.test.ts src/modules/embeddings/openrouter-embeddings.service.test.ts src/observability/logger.test.ts",
+    "test": "tsx --test src/modules/auth/auth-http.test.ts src/modules/auth/rate-limit.service.test.ts src/modules/embeddings/openrouter-embeddings.service.test.ts src/observability/logger.test.ts src/modules/mcp/oauth.service.test.ts",
     "test:integration": "tsx --test src/integration/notes.integration.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@prisma/client": "^6.19.0",
     "@sentry/node": "^10.68.0",
     "@upstash/redis": "^1.38.0",
@@ -25,7 +26,8 @@
     "dotenv": "^16.4.5",
     "graphql": "^16.12.0",
     "graphql-yoga": "^5.8.1",
-    "prisma": "^6.19.0"
+    "prisma": "^6.19.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",

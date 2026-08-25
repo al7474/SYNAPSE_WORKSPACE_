@@ -17,6 +17,8 @@
     "dev": "pnpm -r --parallel --filter @synapse/backend --filter @synapse/frontend dev",
     "dev:backend": "pnpm --filter @synapse/backend dev",
     "dev:frontend": "pnpm --filter @synapse/frontend dev",
+    "mcp:build": "pnpm --filter @synapse/mcp build",
+    "mcp:typecheck": "pnpm --filter @synapse/mcp typecheck",
     "db:generate": "pnpm --filter @synapse/backend db:generate",
     "typecheck": "pnpm --filter @synapse/backend typecheck && pnpm --filter @synapse/frontend typecheck",
     "lint": "eslint backend/src frontend --max-warnings=0",
@@ -51,6 +53,7 @@
   "license": "ISC",
   "packageManager": "pnpm@10.33.0",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@prisma/client": "6.19.0",
     "graphql": "^16.12.0",
     "pg": "^8.22.0"

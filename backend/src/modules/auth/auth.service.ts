@@ -362,6 +362,7 @@ export class AuthService {
         where: { userId: tokenRow.userId, revokedAt: null },
         data: { revokedAt: now },
       });
+      await this.revokeMcpTokensForUser(transaction, tokenRow.userId, now);
       await transaction.authActionToken.updateMany({
         where: {
           userId: tokenRow.userId,
@@ -408,6 +409,7 @@ export class AuthService {
         where: { userId: session.userId, revokedAt: null },
         data: { revokedAt: now },
       });
+      await this.revokeMcpTokensForUser(transaction, session.userId, now);
       await transaction.authActionToken.updateMany({
         where: {
           userId: session.userId,
@@ -467,5 +469,26 @@ export class AuthService {
     });
 
     return { user, token };
+  }
+
+  /**
+   * Revokes every remote MCP access/refresh token for a user. Called whenever
+   * a password is changed or reset, since a Synapse password is the only
+   * credential backing the MCP OAuth login form and a compromised/rotated
+   * password must not leave previously issued MCP tokens usable.
+   */
+  private async revokeMcpTokensForUser(
+    executor: DbClient,
+    userId: bigint,
+    revokedAt: Date
+  ): Promise<void> {
+    await executor.mcpAccessToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt },
+    });
+    await executor.mcpRefreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt },
+    });
   }
 }

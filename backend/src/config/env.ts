@@ -292,4 +292,9 @@ export const env = {
     "PENDING_EMBEDDING_ALERT_THRESHOLD",
     50
   ),
+  mcpEnabled: readBoolean("MCP_ENABLED", true),
+  mcpAuthorizationCodeTtlMs: readPositiveInteger("MCP_AUTH_CODE_TTL_MS", 5 * 60 * 1000),
+  mcpAccessTokenTtlMs: readPositiveInteger("MCP_ACCESS_TOKEN_TTL_MS", 60 * 60 * 1000),
+  mcpRefreshTokenTtlMs: readPositiveInteger("MCP_REFRESH_TOKEN_TTL_MS", 30 * 24 * 60 * 60 * 1000),
+  mcpResource: `${authPublicUrl}/mcp`,
 };

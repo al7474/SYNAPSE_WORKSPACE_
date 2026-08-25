@@ -89,20 +89,103 @@ model GuestSession {
 }
 
 model User {
-  id              BigInt              @id @default(autoincrement()) @db.BigInt
-  email           String              @db.Text
-  name            String              @db.Text
-  passwordHash    String              @map("password_hash") @db.Text
-  emailVerifiedAt DateTime?           @map("email_verified_at") @db.Timestamptz(6)
-  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime            @default(now()) @map("updated_at") @db.Timestamptz(6)
-  authSessions    AuthSession[]
-  actionTokens    AuthActionToken[]
-  ownedBoards     Board[]             @relation("BoardOwnerUser")
-  ownedNotes      Note[]              @relation("NoteOwnerUser")
-  collaborations  BoardCollaborator[]
+  id                    BigInt                 @id @default(autoincrement()) @db.BigInt
+  email                 String                 @db.Text
+  name                  String                 @db.Text
+  passwordHash          String                 @map("password_hash") @db.Text
+  emailVerifiedAt       DateTime?              @map("email_verified_at") @db.Timestamptz(6)
+  createdAt             DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime               @default(now()) @map("updated_at") @db.Timestamptz(6)
+  authSessions          AuthSession[]
+  actionTokens          AuthActionToken[]
+  ownedBoards           Board[]                @relation("BoardOwnerUser")
+  ownedNotes            Note[]                 @relation("NoteOwnerUser")
+  collaborations        BoardCollaborator[]
+  mcpAuthorizationCodes McpAuthorizationCode[]
+  mcpAccessTokens       McpAccessToken[]
+  mcpRefreshTokens      McpRefreshToken[]
 
   @@map("users")
+}
+
+/// A dynamically registered OAuth client (VS Code or another MCP client).
+/// Public/PKCE-only clients are supported; no client secret is issued or stored.
+model McpClient {
+  id                 BigInt                 @id @default(autoincrement()) @db.BigInt
+  clientId           String                 @unique(map: "mcp_clients_client_id_key") @map("client_id") @db.Text
+  clientName         String?                @map("client_name") @db.Text
+  redirectUris       String[]               @map("redirect_uris")
+  createdAt          DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  authorizationCodes McpAuthorizationCode[]
+  accessTokens       McpAccessToken[]
+  refreshTokens      McpRefreshToken[]
+
+  @@map("mcp_clients")
+}
+
+/// A single-use Authorization Code issued after the resource owner authenticates,
+/// bound to a PKCE code_challenge per RFC 7636.
+model McpAuthorizationCode {
+  id                  BigInt    @id @default(autoincrement()) @db.BigInt
+  codeHash            String    @unique(map: "mcp_authorization_codes_code_hash_key") @map("code_hash") @db.Text
+  clientId            BigInt    @map("client_id") @db.BigInt
+  userId              BigInt    @map("user_id") @db.BigInt
+  redirectUri         String    @map("redirect_uri") @db.Text
+  codeChallenge        String   @map("code_challenge") @db.Text
+  codeChallengeMethod  String   @default("S256") @map("code_challenge_method") @db.Text
+  scopes               String[]
+  resource             String?  @db.Text
+  expiresAt            DateTime @map("expires_at") @db.Timestamptz(6)
+  consumedAt           DateTime? @map("consumed_at") @db.Timestamptz(6)
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  client               McpClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt], map: "idx_mcp_authorization_codes_expiry")
+  @@index([clientId], map: "idx_mcp_authorization_codes_client")
+  @@map("mcp_authorization_codes")
+}
+
+/// An opaque bearer access token minted for a Synapse user + OAuth client, scoped
+/// to a subset of the MCP tool scopes and (optionally) bound to a resource (RFC 8707).
+model McpAccessToken {
+  id           BigInt           @id @default(autoincrement()) @db.BigInt
+  tokenHash    String           @unique(map: "mcp_access_tokens_token_hash_key") @map("token_hash") @db.Text
+  clientId     BigInt           @map("client_id") @db.BigInt
+  userId       BigInt           @map("user_id") @db.BigInt
+  scopes       String[]
+  resource     String?          @db.Text
+  expiresAt    DateTime         @map("expires_at") @db.Timestamptz(6)
+  revokedAt    DateTime?        @map("revoked_at") @db.Timestamptz(6)
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  client       McpClient        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshToken McpRefreshToken?
+
+  @@index([userId, createdAt(sort: Desc)], map: "idx_mcp_access_tokens_user")
+  @@index([expiresAt], map: "idx_mcp_access_tokens_expiry")
+  @@map("mcp_access_tokens")
+}
+
+/// A refresh token paired 1:1 with the access token it was minted alongside.
+model McpRefreshToken {
+  id            BigInt          @id @default(autoincrement()) @db.BigInt
+  tokenHash     String          @unique(map: "mcp_refresh_tokens_token_hash_key") @map("token_hash") @db.Text
+  clientId      BigInt          @map("client_id") @db.BigInt
+  userId        BigInt          @map("user_id") @db.BigInt
+  scopes        String[]
+  resource      String?         @db.Text
+  accessTokenId BigInt?         @unique @map("access_token_id") @db.BigInt
+  expiresAt     DateTime        @map("expires_at") @db.Timestamptz(6)
+  revokedAt     DateTime?       @map("revoked_at") @db.Timestamptz(6)
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  client        McpClient       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken   McpAccessToken? @relation(fields: [accessTokenId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt(sort: Desc)], map: "idx_mcp_refresh_tokens_user")
+  @@index([expiresAt], map: "idx_mcp_refresh_tokens_expiry")
+  @@map("mcp_refresh_tokens")
 }
 
 model AuthSession {

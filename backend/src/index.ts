@@ -29,6 +29,9 @@ import {
 import { CSRF_HEADER_NAME, isCsrfTokenValid } from "./modules/auth/csrf.service.js";
 import { NotesService } from "./modules/notes/notes.service.js";
 import type { Note, DeletedNoteEvent } from "./modules/notes/notes.types.js";
+import { McpOAuthService } from "./modules/mcp/oauth.service.js";
+import { MCP_OAUTH_PATHS, handleMcpOAuthRequest } from "./modules/mcp/oauth-http.js";
+import { MCP_HTTP_PATH, handleMcpRequest } from "./modules/mcp/mcp-http.js";
 import { createRequestId, getRequestPath, logger } from "./observability/logger.js";
 import {
   captureException,
@@ -39,6 +42,7 @@ import {
 
 const GUEST_SESSION_PATH = "/auth/guest-session";
 const AUTH_PATH_SET = new Set<string>(Object.values(AUTH_PATHS));
+const MCP_OAUTH_PATH_SET = new Set<string>(Object.values(MCP_OAUTH_PATHS));
 const HEALTH_PATH = "/healthz";
 const READINESS_PATH = "/readyz";
 
@@ -332,6 +336,12 @@ async function bootstrap() {
     isProduction: env.isProduction,
   });
   const notesService = new NotesService(db, embeddingsService);
+  const oauthService = new McpOAuthService(db, {
+    resource: env.mcpResource,
+    authorizationCodeTtlMs: env.mcpAuthorizationCodeTtlMs,
+    accessTokenTtlMs: env.mcpAccessTokenTtlMs,
+    refreshTokenTtlMs: env.mcpRefreshTokenTtlMs,
+  });
 
   function subscribe(topic: "NOTE_UPDATED"): AsyncIterable<Note>;
   function subscribe(topic: "NOTE_DELETED"): AsyncIterable<DeletedNoteEvent>;
@@ -521,6 +531,57 @@ async function bootstrap() {
     }
 
     if (
+      env.mcpEnabled &&
+      (requestUrl.pathname === MCP_HTTP_PATH || MCP_OAUTH_PATH_SET.has(requestUrl.pathname))
+    ) {
+      const requestInit: RequestInit & { duplex?: "half" } = {
+        method: request.method,
+        headers: request.headers as HeadersInit,
+      };
+
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        requestInit.body = request as unknown as BodyInit;
+        requestInit.duplex = "half";
+      }
+
+      const webRequest = new Request(
+        `http://${request.headers.host || "localhost"}${request.url || "/"}`,
+        requestInit
+      );
+
+      const handler =
+        requestUrl.pathname === MCP_HTTP_PATH
+          ? handleMcpRequest(webRequest, response, {
+              notesService,
+              oauthService,
+              publicUrl: env.authPublicUrl,
+            })
+          : handleMcpOAuthRequest(webRequest, response, {
+              oauthService,
+              authService,
+              isProduction: env.isProduction,
+              rateLimiter,
+              rateLimitEnabled: env.authRateLimitEnabled,
+              clientIp: getClientIp(request, env.trustProxy),
+              maxBodyBytes: env.authBodyMaxBytes,
+              publicUrl: env.authPublicUrl,
+              resource: env.mcpResource,
+            });
+
+      void handler.catch((error) => {
+        logger.error("mcp.request.handler_failed", { error, requestId, path: requestPath });
+        captureException(error, { component: "mcp_request_handler", requestId });
+
+        if (!response.headersSent) {
+          sendJson(response, 500, { error: "MCP request failed" });
+        } else {
+          response.end();
+        }
+      });
+      return;
+    }
+
+    if (
       env.isProduction &&
       request.method === "POST" &&
       !hasTrustedOrigin(
@@ -672,6 +733,7 @@ async function bootstrap() {
       try {
         await authService.purgeExpired();
         await rateLimiter.purgeExpired();
+        await oauthService.purgeExpired();
       } catch (error) {
         logger.error("auth.cleanup_failed", { error });
         captureException(error, { component: "auth_cleanup" });

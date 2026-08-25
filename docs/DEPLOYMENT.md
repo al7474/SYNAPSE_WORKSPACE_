@@ -103,6 +103,49 @@ These values have safe defaults and can be tuned by the hosting provider:
 
 Do not disable cleanup or reindexing in production without documenting the operational replacement.
 
+### Remote MCP (OAuth)
+
+The backend exposes a remote Model Context Protocol endpoint at `POST /mcp`
+for VS Code (and other MCP clients), protected by an OAuth 2.1 Authorization
+Code + PKCE flow that the backend itself implements — Synapse is both the
+authorization server and the resource server, so no external identity
+provider or additional secret is required. See [MCP_SETUP.md](../MCP_SETUP.md)
+for the end-user flow.
+
+| Variable | Required | Production rule |
+| --- | --- | --- |
+| `MCP_ENABLED` | No | Defaults to `true`. Set to `false` to disable `/mcp`, `/oauth/*`, and the `/.well-known/oauth-*` discovery routes entirely. |
+| `MCP_AUTH_CODE_TTL_MS` | No | Authorization code lifetime. Defaults to `300000` (5 minutes); codes are single-use regardless of this value. |
+| `MCP_ACCESS_TOKEN_TTL_MS` | No | Bearer access token lifetime. Defaults to `3600000` (1 hour). |
+| `MCP_REFRESH_TOKEN_TTL_MS` | No | Refresh token lifetime. Defaults to `2592000000` (30 days). Refreshing rotates both tokens. |
+
+`AUTH_PUBLIC_URL` doubles as the OAuth issuer and the resource identifier
+(`AUTH_PUBLIC_URL/mcp`); it must be the exact public HTTPS origin in
+production, matching the existing production rule above. No additional CORS
+configuration is needed for `/mcp` or `/oauth/*`: MCP clients call the backend
+directly (not through a browser `fetch`), and the interactive login page at
+`GET /oauth/authorize` is a normal top-level browser navigation, not a
+cross-origin request. The login form never sets or reads a cookie; it checks
+the submitted email/password with the same `AuthService.login` used by
+`POST /auth/login` and issues a one-time authorization code instead.
+
+Changing or resetting a Synapse account's password immediately revokes every
+MCP access and refresh token issued for that account, in addition to the
+existing browser session revocation.
+
+**Known limitation:** dynamic client registration (`POST /oauth/register`) is
+intentionally unauthenticated and open, matching the MCP/VS Code client
+discovery flow and RFC 7591's public-client model — anyone can register a
+`client_id`, but a registered client can still only mint tokens for a Synapse
+user who explicitly signs in and approves that specific authorization
+request, scoped to the four read/write scopes, and every access remains
+subject to the normal board ownership/collaborator checks. There is currently
+no admin UI to list or revoke registered clients or issued tokens outside of
+`POST /oauth/revoke` and a password change; treat this the same as any other
+early-stage OAuth deployment and monitor `mcp_access_tokens` /
+`mcp_refresh_tokens` growth alongside the existing cleanup interval
+(`AUTH_CLEANUP_INTERVAL_MS`, which also purges expired MCP codes/tokens).
+
 ### Frontend build
 
 | Variable | Required | Rule |
