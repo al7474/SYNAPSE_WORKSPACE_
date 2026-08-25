@@ -1,6 +1,10 @@
 import type { ServerResponse } from "node:http";
 import { AuthService, normalizeEmail } from "../auth/auth.service.js";
 import {
+  readAuthSessionToken,
+  serializeAuthSessionCookie,
+} from "../auth/auth-http.js";
+import {
   createRateLimitKey,
   type RateLimitDecision,
   type RateLimiter,
@@ -58,6 +62,19 @@ function sendHtml(response: ServerResponse, statusCode: number, html: string): v
   response.setHeader("Content-Type", "text/html; charset=utf-8");
   response.setHeader("Cache-Control", "no-store");
   response.end(html);
+}
+
+function setAuthSessionCookie(
+  response: ServerResponse,
+  token: string,
+  expiresAt: Date,
+  isProduction: boolean
+): void {
+  const maxAgeSeconds = Math.max(1, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
+  response.setHeader(
+    "Set-Cookie",
+    serializeAuthSessionCookie(token, maxAgeSeconds, isProduction)
+  );
 }
 
 function escapeHtml(value: string): string {
@@ -267,6 +284,7 @@ function buildProtectedResourceMetadata(publicUrl: string, resource: string): Re
 }
 
 async function handleAuthorizeGet(
+  request: Request,
   url: URL,
   response: ServerResponse,
   dependencies: McpOAuthHttpDependencies
@@ -321,6 +339,32 @@ async function handleAuthorizeGet(
     response.setHeader("Location", redirectError.toString());
     response.end();
     return;
+  }
+
+  const authToken = readAuthSessionToken(request);
+  if (authToken) {
+    const session = await dependencies.authService.resolveSession(authToken);
+
+    if (session) {
+      const issued = await dependencies.oauthService.createAuthorizationCode(session.user, {
+        clientId,
+        redirectUri,
+        codeChallenge,
+        codeChallengeMethod,
+        scopes,
+        state: state || undefined,
+        resource: resource || undefined,
+      });
+      const redirectUrl = new URL(issued.redirectUri);
+      redirectUrl.searchParams.set("code", issued.code);
+      if (issued.state) {
+        redirectUrl.searchParams.set("state", issued.state);
+      }
+      response.statusCode = 302;
+      response.setHeader("Location", redirectUrl.toString());
+      response.end();
+      return;
+    }
   }
 
   sendHtml(
@@ -406,6 +450,12 @@ async function handleAuthorizePost(
 
   try {
     const session = await dependencies.authService.login(email, password);
+    setAuthSessionCookie(
+      response,
+      session.token,
+      session.context.expiresAt,
+      dependencies.isProduction
+    );
 
     const issued = await dependencies.oauthService.createAuthorizationCode(session.context.user, {
       clientId,
@@ -564,7 +614,7 @@ export async function handleMcpOAuthRequest(
     }
 
     if (request.method === "GET" && url.pathname === MCP_OAUTH_PATHS.authorize) {
-      await handleAuthorizeGet(url, response, dependencies);
+      await handleAuthorizeGet(request, url, response, dependencies);
       return;
     }
 

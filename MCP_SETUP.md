@@ -44,13 +44,20 @@ There is no separate identity provider: a Synapse account **is** the identity.
    as an OAuth client (`POST /oauth/register`), and opens your system browser
    to `GET /oauth/authorize`.
 4. Sign in with your Synapse email and password on the page the backend
-   renders. This is a plain HTML login form served directly by the backend —
-   **no browser cookie is created or read for this flow**; the backend
-   verifies your password directly with the same `AuthService` used by
-   `POST /auth/login` and immediately issues a one-time authorization code.
+   renders. This is a plain HTML login form served directly by the backend.
+   The backend verifies your password directly with the same `AuthService`
+   used by `POST /auth/login`, creates a session cookie, and immediately
+   issues a one-time authorization code.
 5. VS Code exchanges the code for an access token (`POST /oauth/token`) using
    the PKCE code verifier it generated, and attaches
    `Authorization: Bearer <token>` to every subsequent `POST /mcp` request.
+
+The access token lasts 1 hour by default. VS Code refreshes it automatically
+using the refresh token, which lasts 30 days by default. When the session
+cookie is still valid, reopening the authorization flow can complete without
+asking for the email and password again. Authentication is intentionally not
+permanent: revoke the connection or change the account password to invalidate
+its tokens. If the refresh token expires, authorize `synapse-production` again.
 
 The authorization page redirects to a temporary loopback callback owned by VS
 Code. If the URL is opened outside a VS Code-initiated MCP connection, the
