@@ -1,6 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
+import { BlockNoteEditorClient } from "@/components/editor/blocknote-editor-client";
 import type { Note } from "@/types/workspace";
 
 type NoteEditorPanelProps = {
@@ -71,14 +72,19 @@ export function NoteEditorPanel({
         className="note-editor-field mb-4 h-14 min-w-0 w-full border border-[#484848] px-4 text-xl font-medium text-white outline-none placeholder:text-[#707070] focus:border-[#b0b0b0] sm:text-2xl"
       />
 
-      <textarea
-        value={draftContent}
-        onChange={(event) => onDraftContentChange(event.target.value)}
-        placeholder="Write a description..."
-        disabled={!canEditBoard}
+      <div
+        className="note-editor-field min-h-80 min-w-0 flex-1 overflow-y-auto border border-[#484848] text-sm leading-6 text-white"
         aria-label="Note description"
-        className="note-editor-field min-h-80 min-w-0 flex-1 resize-none border border-[#484848] p-4 text-sm leading-6 text-white outline-none placeholder:text-[#707070] focus:border-[#b0b0b0]"
-      />
+      >
+        {selectedNote && (
+          <BlockNoteEditorClient
+            noteId={selectedNote.id}
+            markdown={draftContent}
+            editable={canEditBoard}
+            onMarkdownChange={onDraftContentChange}
+          />
+        )}
+      </div>
     </div>
   );
 }

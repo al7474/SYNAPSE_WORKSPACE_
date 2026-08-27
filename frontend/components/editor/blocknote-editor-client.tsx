@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { ListChecks } from "lucide-react";
 import { useCreateBlockNote } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/mantine";
 
@@ -54,20 +55,50 @@ export function BlockNoteEditorClient({
   }, [editor, markdown, noteId]);
 
   return (
-    <BlockNoteView
-      editor={editor}
-      editable={editable}
-      onChange={() => {
-        if (applyingExternalContentRef.current) {
-          return;
-        }
+    <div className="flex min-h-0 flex-col">
+      <div className="flex items-center justify-between border-b border-[#484848] bg-[#151515] px-3 py-2">
+        <span className="text-[11px] uppercase tracking-[0.4px] text-[#8f8f8f]">Note content</span>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 border border-[#484848] px-2.5 py-1.5 text-xs text-[#d6d6d6] transition-colors hover:border-[#8a8a8a] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={() => {
+            const lastBlock = editor.document[editor.document.length - 1];
 
-        void (async () => {
-          const serialized = await editor.blocksToMarkdownLossy(editor.document);
-          lastAppliedMarkdownRef.current = serialized;
-          onMarkdownChange(serialized);
-        })();
-      }}
-    />
+            if (!lastBlock) {
+              return;
+            }
+
+            const [taskBlock] = editor.insertBlocks(
+              [{ type: "checkListItem", content: "" }],
+              lastBlock.id,
+              "after"
+            );
+            editor.setTextCursorPosition(taskBlock.id, "start");
+          }}
+          disabled={!editable}
+          title="Add a checklist task"
+        >
+          <ListChecks size={14} aria-hidden="true" />
+          Add task
+        </button>
+      </div>
+      <div className="min-h-0 flex-1">
+        <BlockNoteView
+          editor={editor}
+          editable={editable}
+          onChange={() => {
+            if (applyingExternalContentRef.current) {
+              return;
+            }
+
+            void (async () => {
+              const serialized = await editor.blocksToMarkdownLossy(editor.document);
+              lastAppliedMarkdownRef.current = serialized;
+              onMarkdownChange(serialized);
+            })();
+          }}
+        />
+      </div>
+    </div>
   );
 }
