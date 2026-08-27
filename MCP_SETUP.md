@@ -13,9 +13,10 @@ Copilot in VS Code:
   recommended option for day-to-day use and the only option that works with a
   deployed backend without exposing a cookie.
 
-Both servers expose the same five tools:
+Both servers expose the same six tools:
 
 - `list_boards`
+- `create_board`
 - `list_notes`
 - `search_notes`
 - `create_note`
@@ -72,6 +73,7 @@ Every access token is limited to the scopes it was granted:
 | Scope | Grants |
 | --- | --- |
 | `boards:read` | `list_boards` |
+| `boards:create` | `create_board` |
 | `notes:read` | `list_notes`, `search_notes` |
 | `notes:create` | `create_note` |
 | `notes:update` | `update_note` |

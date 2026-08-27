@@ -87,6 +87,26 @@ server.registerTool(
 );
 
 server.registerTool(
+  "create_board",
+  {
+    description: "Create a new Synapse board. Ask the user for confirmation before calling.",
+    inputSchema: {
+      name: z.string().min(1).max(500),
+    },
+  },
+  async ({ name }) => {
+    const result = await requestGraphql<{ createBoard: Board }>(`
+      mutation CreateBoard($name: String!) {
+        createBoard(name: $name) {
+          id name sharePermission updatedAt
+        }
+      }
+    `, { name });
+    return textResult(result.createBoard);
+  }
+);
+
+server.registerTool(
   "list_notes",
   {
     description: "List all notes in a Synapse board.",

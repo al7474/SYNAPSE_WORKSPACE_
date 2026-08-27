@@ -41,6 +41,7 @@ test("isValidCodeVerifier enforces the RFC 7636 character set and length", () =>
 test("parseRequestedScopes defaults to every known scope when omitted", () => {
   assert.deepEqual(parseRequestedScopes(undefined), [
     "boards:read",
+    "boards:create",
     "notes:read",
     "notes:create",
     "notes:update",

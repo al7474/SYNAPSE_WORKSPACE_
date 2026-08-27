@@ -4,6 +4,7 @@
  */
 export const MCP_SCOPES = [
   "boards:read",
+  "boards:create",
   "notes:read",
   "notes:create",
   "notes:update",

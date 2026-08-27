@@ -48,6 +48,21 @@ export function createSynapseMcpServer(
   );
 
   server.registerTool(
+    "create_board",
+    {
+      description: "Create a new Synapse board. Ask the user for confirmation before calling.",
+      inputSchema: {
+        name: z.string().min(1).max(500),
+      },
+    },
+    async ({ name }) => {
+      requireScope(tokenContext, "boards:create");
+      const board = await notesService.createBoard(ownerId, name, ownerMetadata);
+      return textResult(board);
+    }
+  );
+
+  server.registerTool(
     "list_notes",
     {
       description: "List all notes in a Synapse board.",
