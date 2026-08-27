@@ -15,7 +15,7 @@ type BlockNoteEditorClientProps = {
 
 function parseChecklistFallback(markdown: string): PartialBlock[] {
   return markdown.split(/\r?\n/).map((line) => {
-    const checklistMatch = line.match(/^\s*[-*]\s+\[([ xX])\]\s+(.+)$/);
+    const checklistMatch = line.match(/^\s*[-*]\s+\[([ xX])\]\s*(.*)$/);
 
     if (checklistMatch) {
       return {
@@ -50,8 +50,8 @@ export function BlockNoteEditorClient({
       }
 
       applyingExternalContentRef.current = true;
-      const parsed = await editor.tryParseMarkdownToBlocks(source);
-      const containsChecklist = /^\s*[-*]\s+\[[ xX]\]\s+/m.test(source);
+      const containsChecklist = /\[[ xX]\]/.test(source);
+      const parsed = containsChecklist ? [] : await editor.tryParseMarkdownToBlocks(source);
       const blocks: PartialBlock[] =
         containsChecklist
           ? parseChecklistFallback(source)
