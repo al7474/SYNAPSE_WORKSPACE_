@@ -78,6 +78,7 @@ export function NoteEditorPanel({
       >
         {selectedNote && (
           <BlockNoteEditorClient
+            key={selectedNote.id}
             noteId={selectedNote.id}
             markdown={draftContent}
             editable={canEditBoard}
