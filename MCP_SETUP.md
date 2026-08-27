@@ -13,13 +13,14 @@ Copilot in VS Code:
   recommended option for day-to-day use and the only option that works with a
   deployed backend without exposing a cookie.
 
-Both servers expose the same six tools:
+Both servers expose the same seven tools:
 
 - `list_boards`
 - `create_board`
 - `list_notes`
 - `search_notes`
 - `create_note`
+- `create_task_list`
 - `update_note`
 
 Copilot should request confirmation before creating or updating content.
@@ -76,6 +77,7 @@ Every access token is limited to the scopes it was granted:
 | `boards:create` | `create_board` |
 | `notes:read` | `list_notes`, `search_notes` |
 | `notes:create` | `create_note` |
+| `notes:create` | `create_task_list` |
 | `notes:update` | `update_note` |
 
 Calling a tool without the required scope returns a tool error instead of

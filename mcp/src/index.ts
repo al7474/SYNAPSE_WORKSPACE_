@@ -169,6 +169,40 @@ server.registerTool(
 );
 
 server.registerTool(
+  "create_task_list",
+  {
+    description:
+      "Create a note containing a checklist of tasks in a Synapse board. Ask the user for confirmation before calling.",
+    inputSchema: {
+      boardId: z.string().min(1),
+      title: z.string().min(1).max(500),
+      tasks: z
+        .array(
+          z.object({
+            text: z.string().min(1).max(2000),
+            completed: z.boolean().optional(),
+          })
+        )
+        .min(1)
+        .max(100),
+    },
+  },
+  async ({ boardId, title, tasks }) => {
+    const content = tasks
+      .map((task) => `- [${task.completed ? "x" : " "}] ${task.text}`)
+      .join("\n");
+    const result = await requestGraphql<{ createNote: Note }>(`
+      mutation CreateTaskList($boardId: ID!, $title: String!, $content: String!) {
+        createNote(boardId: $boardId, title: $title, content: $content) {
+          id boardId title content embeddingPending createdAt updatedAt
+        }
+      }
+    `, { boardId, title, content });
+    return textResult(result.createNote);
+  }
+);
+
+server.registerTool(
   "update_note",
   {
     description: "Update the title and/or content of an existing Synapse note. Ask the user for confirmation before calling.",
