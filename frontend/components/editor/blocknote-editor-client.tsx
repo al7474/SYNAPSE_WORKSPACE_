@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { ListChecks } from "lucide-react";
+import type { PartialBlock } from "@blocknote/core";
 import { useCreateBlockNote } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/mantine";
 
@@ -11,6 +12,22 @@ type BlockNoteEditorClientProps = {
   editable: boolean;
   onMarkdownChange: (markdown: string) => void;
 };
+
+function parseChecklistFallback(markdown: string): PartialBlock[] {
+  return markdown.split(/\r?\n/).map((line) => {
+    const checklistMatch = line.match(/^\s*[-*]\s+\[([ xX])\]\s+(.+)$/);
+
+    if (checklistMatch) {
+      return {
+        type: "checkListItem",
+        props: { checked: checklistMatch[1].toLowerCase() === "x" },
+        content: checklistMatch[2],
+      };
+    }
+
+    return { type: "paragraph", content: line };
+  });
+}
 
 export function BlockNoteEditorClient({
   noteId,
@@ -34,6 +51,13 @@ export function BlockNoteEditorClient({
 
       applyingExternalContentRef.current = true;
       const parsed = await editor.tryParseMarkdownToBlocks(source);
+      const containsChecklist = /^\s*[-*]\s+\[[ xX]\]\s+/m.test(source);
+      const blocks: PartialBlock[] =
+        containsChecklist && !parsed.some((block) => block.type === "checkListItem")
+          ? parseChecklistFallback(source)
+          : parsed.length > 0
+            ? parsed
+            : [{ type: "paragraph" as const, content: "" }];
 
       if (cancelled) {
         return;
@@ -41,8 +65,8 @@ export function BlockNoteEditorClient({
 
       const currentBlockIds = editor.document.map((block) => block.id);
 
-      if (currentBlockIds.length > 0 && parsed.length > 0) {
-        editor.replaceBlocks(currentBlockIds, parsed);
+      if (currentBlockIds.length > 0) {
+        editor.replaceBlocks(currentBlockIds, blocks);
       }
 
       lastAppliedMarkdownRef.current = source;
