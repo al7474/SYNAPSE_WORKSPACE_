@@ -53,7 +53,7 @@ export function BlockNoteEditorClient({
       const parsed = await editor.tryParseMarkdownToBlocks(source);
       const containsChecklist = /^\s*[-*]\s+\[[ xX]\]\s+/m.test(source);
       const blocks: PartialBlock[] =
-        containsChecklist && !parsed.some((block) => block.type === "checkListItem")
+        containsChecklist
           ? parseChecklistFallback(source)
           : parsed.length > 0
             ? parsed
