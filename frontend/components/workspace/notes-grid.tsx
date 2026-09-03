@@ -214,6 +214,10 @@ export function NotesGrid({
             event.clientX > nearestCard.rect.left + nearestCard.rect.width / 2);
 
         const nextDropIndex = nearestCard.index + (isAfterNearest ? 1 : 0);
+        if (nextDropIndex === dropIndex) {
+          return;
+        }
+
         layoutSnapshotRef.current = new Map(
           cards.map((rect, index) => {
             const card = cardElements[index];
