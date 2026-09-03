@@ -228,6 +228,7 @@ export default function HomePage() {
         onRemoveCollaborator: boards.handleRemoveCollaborator,
         onSelectNote: handleSelectNote,
         onCreateNote: handleCreateNote,
+        onReorderNote: notes.handleReorderNote,
         onCloseNote: () => setIsNoteEditorOpen(false),
         onDraftTitleChange: notes.setDraftTitle,
         onDraftContentChange: notes.setDraftContent,

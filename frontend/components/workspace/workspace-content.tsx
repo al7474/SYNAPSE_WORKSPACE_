@@ -4,7 +4,7 @@ import { RefreshCw } from "lucide-react";
 import { BoardAccessPanel } from "@/components/workspace/board-access-panel";
 import { NoteEditorPanel } from "@/components/workspace/note-editor-panel";
 import { NotesGrid } from "@/components/workspace/notes-grid";
-import type { Board, BoardCollaborator, BoardPermission, Note } from "@/types/workspace";
+import type { Board, BoardCollaborator, BoardPermission, Note, NoteReorder } from "@/types/workspace";
 
 type WorkspaceContentProps = {
   searchText: string;
@@ -34,6 +34,7 @@ type WorkspaceContentProps = {
   onRemoveCollaborator: (email: string) => void | Promise<void>;
   onSelectNote: (noteId: string) => void;
   onCreateNote: () => void | Promise<void>;
+  onReorderNote: (reorder: NoteReorder) => void;
   onCloseNote: () => void;
   onDraftTitleChange: (value: string) => void;
   onDraftContentChange: (value: string) => void;
@@ -68,6 +69,7 @@ export function WorkspaceContent({
   onRemoveCollaborator,
   onSelectNote,
   onCreateNote,
+  onReorderNote,
   onCloseNote,
   onDraftTitleChange,
   onDraftContentChange,
@@ -132,6 +134,7 @@ export function WorkspaceContent({
               isCreating={isCreating}
               onSelectNote={onSelectNote}
               onCreateNote={onCreateNote}
+              onReorderNote={onReorderNote}
             />
           )
         )}

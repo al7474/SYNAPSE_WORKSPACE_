@@ -13,6 +13,12 @@ export type Note = {
   semanticScore?: number | null;
 };
 
+export type NoteReorder = {
+  noteId: string;
+  targetNoteId: string;
+  position: "before" | "after";
+};
+
 export type Board = {
   id: string;
   ownerId: string;

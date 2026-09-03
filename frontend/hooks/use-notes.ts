@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildNoteSubscriptionUrl, graphQLRequest } from "@/lib/graphql-client";
-import type { Note, NotesFilter, ToastKind } from "@/types/workspace";
+import type { Note, NoteReorder, NotesFilter, ToastKind } from "@/types/workspace";
 
 type UseNotesOptions = {
   sessionId: string;
@@ -39,6 +39,36 @@ export function useNotes({
 
   const autoSearchDebounceRef = useRef<number | null>(null);
   const semanticRequestSeqRef = useRef(0);
+
+  const noteOrderStorageKey = activeBoardId ? `synapse-note-order:${activeBoardId}` : null;
+
+  const applyStoredOrder = useCallback((nextNotes: Note[]): Note[] => {
+    if (!noteOrderStorageKey) {
+      return nextNotes;
+    }
+
+    const storedOrder = window.localStorage.getItem(noteOrderStorageKey);
+    if (!storedOrder) {
+      return nextNotes;
+    }
+
+    try {
+      const orderedIds = JSON.parse(storedOrder) as unknown;
+      if (!Array.isArray(orderedIds) || !orderedIds.every((id): id is string => typeof id === "string")) {
+        return nextNotes;
+      }
+
+      const notesById = new Map(nextNotes.map((note) => [note.id, note]));
+      const orderedNotes = orderedIds
+        .map((id) => notesById.get(id))
+        .filter((note): note is Note => note !== undefined);
+      const orderedIdSet = new Set(orderedNotes.map((note) => note.id));
+
+      return [...orderedNotes, ...nextNotes.filter((note) => !orderedIdSet.has(note.id))];
+    } catch {
+      return nextNotes;
+    }
+  }, [noteOrderStorageKey]);
 
   const selectedNote = useMemo(
     () => notes.find((note) => note.id === selectedId) || null,
@@ -87,7 +117,7 @@ export function useNotes({
         { boardId: activeBoardId, shareToken: activeShareToken }
       );
 
-      setNotes(data.listNotes);
+      setNotes(applyStoredOrder(data.listNotes));
       setSemanticResults(null);
       setSelectedId((previousSelectedId) => previousSelectedId || data.listNotes[0]?.id || "");
       onStatusChange("Workspace synced");
@@ -96,7 +126,44 @@ export function useNotes({
     } finally {
       setIsLoading(false);
     }
-  }, [activeBoardId, activeShareToken, onStatusChange, sessionId]);
+  }, [activeBoardId, activeShareToken, applyStoredOrder, onStatusChange, sessionId]);
+
+  const handleReorderNote = useCallback(
+    ({ noteId, targetNoteId, position }: NoteReorder) => {
+      if (!canEditBoard || noteId === targetNoteId) {
+        return;
+      }
+
+      setNotes((previousNotes) => {
+        const sourceIndex = previousNotes.findIndex((note) => note.id === noteId);
+        const targetIndex = previousNotes.findIndex((note) => note.id === targetNoteId);
+
+        if (sourceIndex === -1 || targetIndex === -1) {
+          return previousNotes;
+        }
+
+        const nextNotes = [...previousNotes];
+        const [movedNote] = nextNotes.splice(sourceIndex, 1);
+        const insertionIndex =
+          position === "after"
+            ? sourceIndex < targetIndex
+              ? targetIndex
+              : targetIndex + 1
+            : sourceIndex < targetIndex
+              ? targetIndex - 1
+              : targetIndex;
+        nextNotes.splice(insertionIndex, 0, movedNote);
+
+        if (noteOrderStorageKey) {
+          window.localStorage.setItem(noteOrderStorageKey, JSON.stringify(nextNotes.map((note) => note.id)));
+        }
+
+        return nextNotes;
+      });
+      onStatusChange("Note order updated");
+    },
+    [canEditBoard, noteOrderStorageKey, onStatusChange]
+  );
 
   useEffect(() => {
     void loadNotes();
@@ -536,6 +603,7 @@ export function useNotes({
     runSemanticSearch,
     handleCreateNote,
     handleDeleteSelected,
+    handleReorderNote,
     resetNotes,
   };
 }

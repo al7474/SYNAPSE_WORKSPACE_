@@ -42,3 +42,25 @@ body {
 	background-color: #111111;
 	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), inset 0 0 0 1px rgba(0, 0, 0, 0.3);
 }
+
+@keyframes note-card-settle {
+	0% {
+		transform: scale(1.03) translateY(-4px);
+	}
+	65% {
+		transform: scale(0.99) translateY(1px);
+	}
+	100% {
+		transform: scale(1) translateY(0);
+	}
+}
+
+.note-card-settle {
+	animation: note-card-settle 360ms cubic-bezier(0.22, 1.35, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.note-card-settle {
+		animation: none;
+	}
+}
