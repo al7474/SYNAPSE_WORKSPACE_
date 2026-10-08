@@ -137,3 +137,130 @@ test("does not overwrite content edited while a pending embedding is generated",
     await deleteBoard(board.id);
   }
 });
+
+function embeddedInputOf(body: BodyInit | null | undefined): string {
+  return (JSON.parse(String(body)) as { input: string }).input;
+}
+
+test("embeds title and content together and regenerates when only the title changes", async () => {
+  const ownerId = `ci-title-owner-${process.pid}-${Date.now()}`;
+  const embeddedInputs: string[] = [];
+  const notes = createNotesService(async (_input, init) => {
+    embeddedInputs.push(embeddedInputOf(init?.body));
+    return createEmbeddingResponse();
+  });
+  const board = await notes.createBoard(ownerId, "CI title embedding board", legacyOwnerMetadata);
+
+  try {
+    const created = await notes.createNote({
+      ownerId,
+      ownerMetadata: legacyOwnerMetadata,
+      boardId: board.id,
+      title: "Original title",
+      content: "Shared body",
+    });
+    const updated = await notes.updateNote({
+      ownerId,
+      ownerMetadata: legacyOwnerMetadata,
+      boardId: board.id,
+      id: created.id,
+      title: "Renamed title",
+    });
+    const stored = await db.$queryRaw<Array<{ has_embedding: boolean }>>`
+      SELECT "embedding" IS NOT NULL AS has_embedding
+      FROM "notes"
+      WHERE "id" = ${BigInt(created.id)}
+    `;
+
+    assert.deepEqual(embeddedInputs, ["Original title\n\nShared body", "Renamed title\n\nShared body"]);
+    assert.equal(updated.embeddingPending, false);
+    assert.equal(stored[0].has_embedding, true);
+  } finally {
+    await deleteBoard(board.id);
+  }
+});
+
+test("keeps the previous embedding searchable when regeneration fails", async () => {
+  const ownerId = `ci-fallback-owner-${process.pid}-${Date.now()}`;
+  const healthyNotes = createNotesService(async () => createEmbeddingResponse());
+  const failingNotes = createNotesService(async () => {
+    throw new Error("OpenRouter unavailable");
+  });
+  const board = await healthyNotes.createBoard(ownerId, "CI failed regeneration board", legacyOwnerMetadata);
+
+  try {
+    const created = await healthyNotes.createNote({
+      ownerId,
+      ownerMetadata: legacyOwnerMetadata,
+      boardId: board.id,
+      title: "Stable title",
+      content: "Stable body",
+    });
+    const updated = await failingNotes.updateNote({
+      ownerId,
+      ownerMetadata: legacyOwnerMetadata,
+      boardId: board.id,
+      id: created.id,
+      content: "Edited while offline",
+    });
+    const stored = await db.$queryRaw<Array<{ has_embedding: boolean }>>`
+      SELECT "embedding" IS NOT NULL AS has_embedding
+      FROM "notes"
+      WHERE "id" = ${BigInt(created.id)}
+    `;
+    const matches = await healthyNotes.semanticSearch({
+      ownerId,
+      ownerMetadata: legacyOwnerMetadata,
+      boardId: board.id,
+      query: "Stable body",
+    });
+
+    assert.equal(updated.content, "Edited while offline");
+    assert.equal(updated.embeddingPending, true);
+    assert.equal(stored[0].has_embedding, true);
+    assert.equal(matches[0]?.id, created.id);
+  } finally {
+    await deleteBoard(board.id);
+  }
+});
+
+test("does not overwrite a title edited while a pending embedding is generated", async () => {
+  const ownerId = `ci-stale-title-owner-${process.pid}-${Date.now()}`;
+  const notes = createNotesService(async () => {
+    await db.note.update({
+      where: { id: pendingNote.id },
+      data: { title: "Fresh title", updatedAt: new Date() },
+    });
+    return createEmbeddingResponse();
+  });
+  const board = await notes.createBoard(ownerId, "CI stale title board", legacyOwnerMetadata);
+  const pendingNote = await db.note.create({
+    data: {
+      ownerId,
+      ownerKind: "legacy",
+      boardId: BigInt(board.id),
+      title: "Pending title",
+      content: "Content captured by the reindex worker",
+      embeddingPending: true,
+    },
+  });
+
+  try {
+    const reindexed = await notes.reindexPendingEmbeddingsForBoard(
+      ownerId,
+      undefined,
+      board.id,
+      undefined,
+      20,
+      legacyOwnerMetadata
+    );
+    const current = await db.note.findUniqueOrThrow({ where: { id: pendingNote.id } });
+
+    assert.deepEqual(reindexed, []);
+    assert.equal(current.title, "Fresh title");
+    assert.equal(current.embeddingPending, true);
+  } finally {
+    await deleteBoard(board.id);
+  }
+});
+

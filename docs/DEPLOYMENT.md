@@ -259,6 +259,15 @@ Compatibility: the previous backend always sends `owner_kind` on insert, so drop
 
 If the guard fires during CD, the release stops at the migration step. Inspect the rows with a read-only query, decide for each owner whether to export or delete them, apply that decision through the provider's reviewed backup procedure, and rerun the failed workflow. Do not use `migrate reset` for this.
 
+### Embedding text data plan
+
+Migration `20261008230420_mark_notes_pending_for_title_reembedding` marks existing notes for reindexing, because embeddings now cover the title as well as the content.
+
+- The migration only sets `embedding_pending = TRUE` on notes where it is currently `FALSE`. It does not delete or change `embedding` and does not touch `updated_at`, so note ordering and semantic search keep working while the reindex worker runs.
+- Production had 15 notes on 2026-10-08 (read-only query), well below the default embedding backlog alert threshold of `50`.
+- The reindex worker processes pending notes in batches at the configured interval and needs `OPENROUTER_API_KEY`. Without it, notes stay pending and keep their previous embeddings.
+- Title-only edits now call OpenRouter, so embedding usage grows with renames as well as content edits.
+
 ### Rollback
 
 The CD workflow does not automatically run database down migrations. Prisma migrations are expected to be additive and backward-compatible during the release window; an automatic schema rollback can destroy data or leave the previous application binary incompatible.

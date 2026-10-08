@@ -51,6 +51,10 @@ type PrismaNoteRow = Pick<
 
 type DbClient = PrismaClient | Prisma.TransactionClient;
 
+function toEmbeddingText(title: string, content: string): string {
+  return `${title}\n\n${content}`;
+}
+
 export class NotesService {
   constructor(
     private readonly db: PrismaClient,
@@ -61,9 +65,9 @@ export class NotesService {
     return `[${vector.join(",")}]`;
   }
 
-  private async buildEmbedding(content: string): Promise<{ vectorLiteral: string | null; pending: boolean }> {
+  private async buildEmbedding(embeddingText: string): Promise<{ vectorLiteral: string | null; pending: boolean }> {
     try {
-      const embedding = await this.embeddingsService.generateEmbedding(content);
+      const embedding = await this.embeddingsService.generateEmbedding(embeddingText);
       return { vectorLiteral: this.toPgvectorLiteral(embedding), pending: false };
     } catch (error) {
       logger.warn("embeddings.generation_failed", { error });
@@ -602,7 +606,7 @@ export class NotesService {
       true,
       input.ownerMetadata
     );
-    const embedding = await this.buildEmbedding(input.content);
+    const embedding = await this.buildEmbedding(toEmbeddingText(input.title, input.content));
     const boardId = this.parseId(input.boardId, "Board");
 
     return this.db.$transaction(async (transaction) => {
@@ -623,7 +627,9 @@ export class NotesService {
         },
       });
 
-      await this.setEmbedding(transaction, row.id, embedding.vectorLiteral);
+      if (embedding.vectorLiteral !== null) {
+        await this.setEmbedding(transaction, row.id, embedding.vectorLiteral);
+      }
       const saved = await transaction.note.findUniqueOrThrow({ where: { id: row.id } });
       return this.toNote(saved);
     });
@@ -649,38 +655,40 @@ export class NotesService {
       throw new Error("Note not found");
     }
 
+    const nextTitle = input.title ?? current.title;
     const nextContent = input.content ?? current.content;
-    const contentChanged = nextContent !== current.content;
+    const embeddingInputChanged = nextTitle !== current.title || nextContent !== current.content;
 
-    if (!contentChanged) {
+    if (!embeddingInputChanged) {
       const row = await this.db.note.update({
         where: { id: noteId },
-        data: {
-          title: input.title ?? undefined,
-          updatedAt: new Date(),
-        },
+        data: { updatedAt: new Date() },
       });
       return this.toNote(row);
     }
 
-    const embedding = await this.buildEmbedding(nextContent);
+    const embedding = await this.buildEmbedding(toEmbeddingText(nextTitle, nextContent));
 
     return this.db.$transaction(async (transaction) => {
       await transaction.note.update({
         where: { id: noteId },
         data: {
-          title: input.title ?? undefined,
+          title: nextTitle,
           content: nextContent,
           embeddingPending: embedding.pending,
           updatedAt: new Date(),
         },
       });
-      await this.setEmbedding(transaction, noteId, embedding.vectorLiteral);
+
+      // A failed regeneration keeps the previous vector searchable until the reindex worker replaces it.
+      if (embedding.vectorLiteral !== null) {
+        await this.setEmbedding(transaction, noteId, embedding.vectorLiteral);
+      }
+
       const row = await transaction.note.findUniqueOrThrow({ where: { id: noteId } });
       return this.toNote(row);
     });
   }
-
   async listNotes(input: ListNotesInput): Promise<Note[]> {
     await this.requireBoardAccess(
       input.ownerId,
@@ -818,12 +826,12 @@ export class NotesService {
       where: { boardId: boardValue, embeddingPending: true },
       orderBy: { updatedAt: "asc" },
       take: safeLimit,
-      select: { id: true, content: true },
+      select: { id: true, title: true, content: true },
     });
     const updatedNotes: Note[] = [];
 
     for (const row of pending) {
-      const embedding = await this.buildEmbedding(row.content);
+      const embedding = await this.buildEmbedding(toEmbeddingText(row.title, row.content));
 
       if (!embedding.vectorLiteral || embedding.pending) {
         continue;
@@ -832,6 +840,7 @@ export class NotesService {
       const updated = await this.updateReindexedEmbedding(
         row.id,
         boardValue,
+        row.title,
         row.content,
         embedding.vectorLiteral
       );
@@ -850,12 +859,12 @@ export class NotesService {
       where: { embeddingPending: true },
       orderBy: { updatedAt: "asc" },
       take: safeLimit,
-      select: { id: true, boardId: true, content: true },
+      select: { id: true, boardId: true, title: true, content: true },
     });
     const updatedNotes: Note[] = [];
 
     for (const row of pending) {
-      const embedding = await this.buildEmbedding(row.content);
+      const embedding = await this.buildEmbedding(toEmbeddingText(row.title, row.content));
 
       if (!embedding.vectorLiteral || embedding.pending) {
         continue;
@@ -864,6 +873,7 @@ export class NotesService {
       const updated = await this.updateReindexedEmbedding(
         row.id,
         row.boardId,
+        row.title,
         row.content,
         embedding.vectorLiteral
       );
@@ -883,17 +893,8 @@ export class NotesService {
   private async setEmbedding(
     client: DbClient,
     noteId: bigint,
-    vectorLiteral: string | null
+    vectorLiteral: string
   ): Promise<void> {
-    if (vectorLiteral === null) {
-      await client.$executeRaw(Prisma.sql`
-        UPDATE "notes"
-        SET "embedding" = NULL
-        WHERE "id" = ${noteId}
-      `);
-      return;
-    }
-
     await client.$executeRaw(Prisma.sql`
       UPDATE "notes"
       SET "embedding" = ${vectorLiteral}::vector
@@ -904,6 +905,7 @@ export class NotesService {
   private async updateReindexedEmbedding(
     noteId: bigint,
     boardId: bigint,
+    expectedTitle: string,
     expectedContent: string,
     vectorLiteral: string
   ): Promise<Note | null> {
@@ -914,6 +916,7 @@ export class NotesService {
           "updated_at" = CURRENT_TIMESTAMP
       WHERE "id" = ${noteId}
         AND "board_id" = ${boardId}
+        AND "title" = ${expectedTitle}
         AND "content" = ${expectedContent}
     `);
 
@@ -924,7 +927,6 @@ export class NotesService {
     const row = await this.db.note.findUnique({ where: { id: noteId } });
     return row ? this.toNote(row) : null;
   }
-
   private toNote(row: PrismaNoteRow | NoteRow): Note {
     if ("boardId" in row) {
       return {

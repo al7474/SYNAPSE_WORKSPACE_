@@ -8,6 +8,7 @@
   - `embedding VECTOR(1024)`
   - `embedding_pending BOOLEAN NOT NULL DEFAULT FALSE`
   - `owner_id TEXT NOT NULL`
+- The embedded text is the note title, a blank line, and then the note content (`title\n\ncontent`). Creating a note, or changing its title or content, regenerates the embedding. If regeneration fails, the note keeps its previous embedding, stays `embedding_pending = true`, and remains searchable with that previous vector until the reindex worker replaces it.
 
 Prisma schema: `backend/prisma/schema.prisma`.
 
