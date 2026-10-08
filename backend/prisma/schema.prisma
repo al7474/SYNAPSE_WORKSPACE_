@@ -18,7 +18,7 @@ model Note {
   createdAt           DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime               @default(now()) @map("updated_at") @db.Timestamptz(6)
   ownerId             String                 @map("owner_id") @db.Text
-  ownerKind           String                 @default("legacy") @map("owner_kind") @db.Text
+  ownerKind           String                 @map("owner_kind") @db.Text
   ownerUserId         BigInt?                @map("owner_user_id") @db.BigInt
   ownerGuestSessionId BigInt?                @map("owner_guest_session_id") @db.BigInt
   boardId             BigInt                 @map("board_id") @db.BigInt
@@ -42,7 +42,7 @@ model Board {
   sharePermission     String                @default("view") @map("share_permission") @db.Text
   createdAt           DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime              @default(now()) @map("updated_at") @db.Timestamptz(6)
-  ownerKind           String                @default("legacy") @map("owner_kind") @db.Text
+  ownerKind           String                @map("owner_kind") @db.Text
   ownerUserId         BigInt?               @map("owner_user_id") @db.BigInt
   ownerGuestSessionId BigInt?               @map("owner_guest_session_id") @db.BigInt
   notes               Note[]

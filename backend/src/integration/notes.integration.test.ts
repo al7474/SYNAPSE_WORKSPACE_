@@ -6,6 +6,7 @@ import { NotesService } from "../modules/notes/notes.service.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const embedding = Array.from({ length: 1024 }, (_, index) => (index === 0 ? 1 : 0));
+const legacyOwnerMetadata = { ownerKind: "legacy" as const };
 
 let db: PrismaClient;
 
@@ -52,11 +53,12 @@ test("persists notes and searches migrated pgvector data with a mocked OpenRoute
     return createEmbeddingResponse();
   };
   const notes = createNotesService(fetchImpl);
-  const board = await notes.createBoard(ownerId, "CI integration board");
+  const board = await notes.createBoard(ownerId, "CI integration board", legacyOwnerMetadata);
 
   try {
     const created = await notes.createNote({
       ownerId,
+      ownerMetadata: legacyOwnerMetadata,
       boardId: board.id,
       title: "Integration note",
       content: "PostgreSQL and pgvector integration content",
@@ -77,6 +79,7 @@ test("persists notes and searches migrated pgvector data with a mocked OpenRoute
 
     const matches = await notes.semanticSearch({
       ownerId,
+      ownerMetadata: legacyOwnerMetadata,
       boardId: board.id,
       query: "PostgreSQL and pgvector integration content",
     });
@@ -97,7 +100,7 @@ test("does not overwrite content edited while a pending embedding is generated",
     });
     return createEmbeddingResponse();
   });
-  const board = await notes.createBoard(ownerId, "CI stale embedding board");
+  const board = await notes.createBoard(ownerId, "CI stale embedding board", legacyOwnerMetadata);
   const pendingNote = await db.note.create({
     data: {
       ownerId,
@@ -116,7 +119,8 @@ test("does not overwrite content edited while a pending embedding is generated",
       undefined,
       board.id,
       undefined,
-      20
+      20,
+      legacyOwnerMetadata
     );
     const current = await db.note.findUniqueOrThrow({ where: { id: pendingNote.id } });
     const embeddingState = await db.$queryRaw<Array<{ has_embedding: boolean }>>`

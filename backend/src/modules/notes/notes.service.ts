@@ -95,7 +95,7 @@ export class NotesService {
 
   private buildOwnerWhere(
     ownerId: string,
-    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+    ownerMetadata: OwnerMetadata
   ): Prisma.BoardWhereInput {
     if (ownerMetadata.ownerKind === "user") {
       return {
@@ -161,7 +161,7 @@ export class NotesService {
   private isBoardOwner(
     board: Board,
     ownerId: string,
-    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+    ownerMetadata: OwnerMetadata
   ): boolean {
     if (ownerMetadata.ownerKind === "user") {
       return board.ownerKind === "user" && board.ownerUserId === ownerMetadata.ownerUserId;
@@ -193,8 +193,8 @@ export class NotesService {
     userEmail: string | undefined,
     boardId: string,
     shareToken: string | null | undefined,
-    requireEdit = false,
-    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+    requireEdit: boolean,
+    ownerMetadata: OwnerMetadata
   ): Promise<BoardAccess> {
     const boardValue = this.parseId(boardId, "Board");
     const boardRow = await this.db.board.findUnique({ where: { id: boardValue } });
@@ -241,8 +241,8 @@ export class NotesService {
 
   async listBoards(
     ownerId: string,
-    userEmail?: string,
-    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+    userEmail: string | undefined,
+    ownerMetadata: OwnerMetadata
   ): Promise<Board[]> {
     const ownedRows = await this.db.board.findMany({
       where: this.buildOwnerWhere(ownerId, ownerMetadata),
@@ -289,7 +289,7 @@ export class NotesService {
   async listBoardCollaborators(
     ownerId: string,
     boardId: string,
-    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+    ownerMetadata: OwnerMetadata
   ): Promise<BoardCollaborator[]> {
     const boardValue = this.parseId(boardId, "Board");
     const ownerCheck = await this.db.board.findFirst({
@@ -316,7 +316,7 @@ export class NotesService {
     boardId: string,
     email: string,
     permission: BoardPermission,
-    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+    ownerMetadata: OwnerMetadata
   ): Promise<BoardCollaborator> {
     const boardValue = this.parseId(boardId, "Board");
     const ownerCheck = await this.db.board.findFirst({
@@ -361,7 +361,7 @@ export class NotesService {
     ownerId: string,
     boardId: string,
     email: string,
-    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+    ownerMetadata: OwnerMetadata
   ): Promise<boolean> {
     const boardValue = this.parseId(boardId, "Board");
     const ownerCheck = await this.db.board.findFirst({
@@ -388,7 +388,7 @@ export class NotesService {
   async createBoard(
     ownerId: string,
     name: string,
-    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+    ownerMetadata: OwnerMetadata
   ): Promise<Board> {
     const trimmed = name.trim();
 
@@ -419,7 +419,7 @@ export class NotesService {
     ownerId: string,
     boardId: string,
     name: string,
-    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+    ownerMetadata: OwnerMetadata
   ): Promise<Board> {
     const trimmed = name.trim();
 
@@ -451,7 +451,7 @@ export class NotesService {
   async deleteBoard(
     ownerId: string,
     boardId: string,
-    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+    ownerMetadata: OwnerMetadata
   ): Promise<boolean> {
     const result = await this.db.board.deleteMany({
       where: {
@@ -466,7 +466,7 @@ export class NotesService {
     ownerId: string,
     boardId: string,
     permission: BoardPermission,
-    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+    ownerMetadata: OwnerMetadata
   ): Promise<string> {
     const token = this.generateShareToken();
     const result = await this.db.board.updateMany({
@@ -490,7 +490,7 @@ export class NotesService {
   async revokeShareLink(
     ownerId: string,
     boardId: string,
-    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+    ownerMetadata: OwnerMetadata
   ): Promise<boolean> {
     const result = await this.db.board.updateMany({
       where: {
@@ -509,7 +509,7 @@ export class NotesService {
     ownerId: string,
     userEmail: string | undefined,
     token: string,
-    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+    ownerMetadata: OwnerMetadata
   ): Promise<SharedBoardAccess> {
     const row = await this.db.board.findUnique({
       where: { shareTokenHash: this.hashShareToken(token) },
@@ -549,8 +549,8 @@ export class NotesService {
     userEmail: string | undefined,
     boardId: string,
     shareToken: string | undefined,
-    requireEdit = false,
-    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+    requireEdit: boolean,
+    ownerMetadata: OwnerMetadata
   ): Promise<void> {
     await this.requireBoardAccess(
       ownerId,
@@ -711,7 +711,7 @@ export class NotesService {
     boardId: string,
     shareToken: string | undefined,
     id: string,
-    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+    ownerMetadata: OwnerMetadata
   ): Promise<boolean> {
     return Boolean(
       await this.deleteNoteWithMetadata(
@@ -731,7 +731,7 @@ export class NotesService {
     boardId: string,
     shareToken: string | undefined,
     id: string,
-    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+    ownerMetadata: OwnerMetadata
   ): Promise<DeletedNoteEvent | null> {
     await this.requireBoardAccess(
       ownerId,
@@ -769,8 +769,8 @@ export class NotesService {
     userEmail: string | undefined,
     boardId: string,
     shareToken: string | undefined,
-    limit = 20,
-    ownerMetadata: OwnerMetadata = { ownerKind: "legacy" }
+    limit: number,
+    ownerMetadata: OwnerMetadata
   ): Promise<Note[]> {
     await this.requireBoardAccess(
       ownerId,

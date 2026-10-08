@@ -241,6 +241,24 @@ The workflow runs `node scripts/smoke/deployment-smoke.mjs`, which is also avail
 
 The smoke does not create an account, session, board, or note. It requires `SMOKE_BASE_URL` and `SMOKE_FRONTEND_ORIGIN`, both as origins without a path.
 
+### Owner kind data plan
+
+Migration `20261008215511_require_explicit_owner_kind` retires the implicit `ownerKind = 'legacy'` default on `boards` and `notes` and makes `ownerMetadata` mandatory in `NotesService`, so every write must state its owner kind explicitly.
+
+Data inventory, checked on 2026-10-08 with read-only queries:
+
+- Local database: 0 `legacy` boards and 0 `legacy` notes.
+- Production (Neon): 4 `user` boards and 15 `user` notes. 0 `legacy` boards or notes, 0 `legacy` boards with notes, 0 `legacy` boards with share links, and 0 collaborators on `legacy` boards.
+
+What the migration does:
+
+1. A guard block counts rows in `boards` and `notes` with `owner_kind = 'legacy'`. If the count is above zero, it raises an exception and the migration stops before changing any column.
+2. Otherwise it drops the `owner_kind` default on both tables. This is a catalog-only change; it does not rewrite the tables and does not delete, update, or reassign rows.
+
+Compatibility: the previous backend always sends `owner_kind` on insert, so dropping the default does not affect the release window.
+
+If the guard fires during CD, the release stops at the migration step. Inspect the rows with a read-only query, decide for each owner whether to export or delete them, apply that decision through the provider's reviewed backup procedure, and rerun the failed workflow. Do not use `migrate reset` for this.
+
 ### Rollback
 
 The CD workflow does not automatically run database down migrations. Prisma migrations are expected to be additive and backward-compatible during the release window; an automatic schema rollback can destroy data or leave the previous application binary incompatible.
