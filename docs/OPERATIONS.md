@@ -67,7 +67,7 @@ For a leaked session, CSRF, share, or action token, revoke the associated sessio
 
 ## One-replica limit
 
-Keep the backend at one replica. GraphQL subscriptions use process-local PubSub, and cleanup/reindex workers run in process memory. Multiple replicas would cause:
+Keep the backend at one replica. GraphQL subscriptions and share-link subscription tickets use process-local memory, and cleanup/reindex workers run in process memory. Multiple replicas would cause:
 
 - realtime updates to reach only clients connected to the publishing process;
 - duplicate cleanup and embedding work;

@@ -4,8 +4,8 @@ export type LogLevel = "debug" | "info" | "warn" | "error";
 export type LogFields = Record<string, unknown>;
 
 const REDACTED_VALUE = "[REDACTED]";
-const SENSITIVE_KEY_PATTERN = /(authorization|cookie|csrf|password|secret|token|api[-_]?key|session)/i;
-const SENSITIVE_QUERY_PATTERN = /([?#&](?:share(?:Token)?|token|csrf(?:Token)?|session(?:Id)?|code)=)[^&#\s]*/gi;
+const SENSITIVE_KEY_PATTERN = /(authorization|cookie|csrf|password|secret|token|ticket|api[-_]?key|session)/i;
+const SENSITIVE_QUERY_PATTERN = /([?#&](?:share(?:Token)?|token|ticket|csrf(?:Token)?|session(?:Id)?|code)=)[^&#\s]*/gi;
 const BEARER_PATTERN = /(Bearer\s+)[^\s]+/gi;
 const SAFE_BOOLEAN_STATUS_KEYS = new Set(["sharetokenpresent", "tokenredacted"]);
 

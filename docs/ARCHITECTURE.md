@@ -29,7 +29,7 @@ similarity search because Prisma cannot expose `Unsupported("vector(1024)")` fie
 - `frontend/hooks/use-boards.ts`: board loading, selection, permissions, sharing, deletion, and collaborator actions.
 - `frontend/hooks/use-notes.ts`: note loading, selection, autosave, semantic search, realtime updates, creation, and deletion.
 - `frontend/hooks/use-toasts.ts`: transient notification state and cleanup.
-- `frontend/lib/graphql-client.ts`: cookie-authenticated GraphQL requests and subscription URL construction.
+- `frontend/lib/graphql-client.ts`: cookie-authenticated GraphQL requests, share-link ticket requests, and subscription URL construction. `frontend/lib/note-subscription.ts` opens note subscriptions and reopens share-link streams with a fresh ticket.
 - `frontend/lib/session.ts`: guest and account session API calls; account identity is never persisted in local storage.
 - `frontend/components/auth/`: authentication and session-loading views.
 - `frontend/components/workspace/`: workspace shell, navigation, note grid, editor, dialogs, and notifications.
@@ -69,6 +69,11 @@ Keep GraphQL and browser persistence inside hooks or `lib/` modules. Components 
 - Share links support `view` and `edit`. Read operations accept either permission; note writes require `edit` and are checked again for every request.
 - Browser share URLs place the token in the URL fragment (`#share=...`) rather than the query string. The frontend removes the consumed fragment after successful access and keeps raw tokens out of ordinary board payloads and persistent browser history where possible.
 - Realtime subscriptions revalidate the session and board permission before opening and before delivering each matching event. Revoking a session or share link therefore stops future events on an existing subscription.
+- Account-session subscriptions authenticate with the `HttpOnly` session cookie. `EventSource` sends it with `withCredentials`, so these subscriptions need no ticket and no share token.
+- Share-link subscriptions use a subscription ticket, because `EventSource` cannot send headers. `createSubscriptionTicket` requires a session and a valid share token (sent in the POST body, never in a URL) and returns a 256-bit random ticket that is valid for 45 seconds and can be redeemed once.
+- The backend stores only the SHA-256 hash of each ticket, in process memory. A ticket is bound to one board and one event type, and the first redemption attempt consumes it whether or not it matches.
+- The subscription URL carries the board id and the ticket, never the share token. Because tickets live in process memory, they follow the same single-replica constraint as the subscription PubSub.
+- A share-link subscription re-checks both the session that issued the ticket and the link's current token hash before every event. Revoking or replacing the link ends the stream, and the browser opens a new stream with a fresh ticket only if the link is still valid.
 
 ## Security guardrails
 

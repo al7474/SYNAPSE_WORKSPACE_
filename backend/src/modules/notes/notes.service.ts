@@ -144,18 +144,22 @@ export class NotesService {
     return crypto.createHash("sha256").update(token).digest("hex");
   }
 
-  private matchesShareToken(board: BoardRecord, token: string | null | undefined): boolean {
-    if (!token || !board.shareTokenHash) {
-      return false;
-    }
-
-    const candidateHash = Buffer.from(this.hashShareToken(token), "hex");
-    const storedHash = Buffer.from(board.shareTokenHash, "hex");
+  private hashesMatch(storedHashHex: string, candidateHashHex: string): boolean {
+    const storedHash = Buffer.from(storedHashHex, "hex");
+    const candidateHash = Buffer.from(candidateHashHex, "hex");
 
     return (
       candidateHash.length === storedHash.length &&
       crypto.timingSafeEqual(candidateHash, storedHash)
     );
+  }
+
+  private matchesShareToken(board: BoardRecord, token: string | null | undefined): boolean {
+    if (!token || !board.shareTokenHash) {
+      return false;
+    }
+
+    return this.hashesMatch(board.shareTokenHash, this.hashShareToken(token));
   }
 
   private isBoardOwner(
@@ -560,6 +564,33 @@ export class NotesService {
       requireEdit,
       ownerMetadata
     );
+  }
+
+  async resolveShareTokenHash(boardId: string, shareToken: string): Promise<string> {
+    const row = await this.db.board.findUnique({ where: { id: this.parseId(boardId, "Board") } });
+
+    if (!row) {
+      throw new Error("Board not found");
+    }
+
+    const board = this.toBoard(row);
+
+    if (!board.shareTokenHash || !this.matchesShareToken(board, shareToken)) {
+      throw new Error("Access denied for this board");
+    }
+
+    return board.shareTokenHash;
+  }
+
+  async assertShareLinkActive(boardId: string, shareTokenHash: string): Promise<void> {
+    const row = await this.db.board.findUnique({
+      where: { id: this.parseId(boardId, "Board") },
+      select: { shareTokenHash: true },
+    });
+
+    if (!row?.shareTokenHash || !this.hashesMatch(row.shareTokenHash, shareTokenHash)) {
+      throw new Error("Access denied for this board");
+    }
   }
 
   async createNote(input: CreateNoteInput): Promise<Note> {

@@ -28,6 +28,7 @@ import {
 } from "./modules/auth/rate-limit.service.js";
 import { CSRF_HEADER_NAME, isCsrfTokenValid } from "./modules/auth/csrf.service.js";
 import { NotesService } from "./modules/notes/notes.service.js";
+import { SubscriptionTicketService } from "./modules/subscriptions/subscription-ticket.service.js";
 import type { Note, DeletedNoteEvent } from "./modules/notes/notes.types.js";
 import { McpOAuthService } from "./modules/mcp/oauth.service.js";
 import { MCP_OAUTH_PATHS, handleMcpOAuthRequest } from "./modules/mcp/oauth-http.js";
@@ -336,6 +337,10 @@ async function bootstrap() {
     isProduction: env.isProduction,
   });
   const notesService = new NotesService(db, embeddingsService);
+  const subscriptionTickets = new SubscriptionTicketService({
+    ttlMs: 45_000,
+    maxPendingTickets: 10_000,
+  });
   const oauthService = new McpOAuthService(db, {
     resource: env.mcpResource,
     authorizationCodeTtlMs: env.mcpAuthorizationCodeTtlMs,
@@ -356,12 +361,15 @@ async function bootstrap() {
   }
 
   const yoga = createYoga({
-    schema: buildSchema({
-      publish: async (topic, payload) => {
-        await pubSub.publish(topic, payload);
+    schema: buildSchema(
+      {
+        publish: async (topic, payload) => {
+          await pubSub.publish(topic, payload);
+        },
+        subscribe,
       },
-      subscribe,
-    }),
+      subscriptionTickets
+    ),
     context: async ({ request }) => {
       const authSessionCookieValue = readAuthSessionToken(request);
 

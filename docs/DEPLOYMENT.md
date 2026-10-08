@@ -11,7 +11,7 @@ This document defines the environment contract for Synapse Workspace. It is inte
 - Transactional email: Resend.
 - Embeddings: OpenRouter.
 
-The backend currently keeps GraphQL subscription PubSub and maintenance timers in process memory. Run one backend replica until those responsibilities are moved to shared infrastructure.
+The backend currently keeps GraphQL subscription PubSub, subscription tickets, and maintenance timers in process memory. Run one backend replica until those responsibilities are moved to shared infrastructure. Subscriptions no longer accept `shareToken`, so release the backend and frontend together; an older frontend's subscriptions fail validation until it is updated.
 
 ## Local setup
 

@@ -26,6 +26,17 @@ test("redacts share and action tokens from URLs", () => {
   );
 });
 
+test("redacts subscription tickets from URLs and log fields", () => {
+  const value = "https://api.example.com/graphql?ticket=ticket-secret&query=subscription";
+  const sanitized = sanitizeLogValue({ ticket: "ticket-secret" }) as Record<string, unknown>;
+
+  assert.equal(
+    redactSensitiveText(value),
+    "https://api.example.com/graphql?ticket=[REDACTED]&query=subscription"
+  );
+  assert.equal(sanitized.ticket, "[REDACTED]");
+});
+
 test("redacts sensitive log fields and error text", () => {
   const sanitized = sanitizeLogValue({
     cookie: "synapse_auth_session=secret",

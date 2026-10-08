@@ -8,6 +8,7 @@ import type { OwnerMetadata } from "../modules/auth/auth.types.js";
 import { OpenRouterEmbeddingsService } from "../modules/embeddings/openrouter-embeddings.service.js";
 import { McpOAuthService } from "../modules/mcp/oauth.service.js";
 import { NotesService } from "../modules/notes/notes.service.js";
+import { SubscriptionTicketService } from "../modules/subscriptions/subscription-ticket.service.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const embedding = Array.from({ length: 1024 }, (_, index) => (index === 0 ? 1 : 0));
@@ -195,7 +196,10 @@ before(async () => {
   await db.$connect();
 
   notes = createNotesService();
-  schema = buildSchema(noopPubSub);
+  schema = buildSchema(
+    noopPubSub,
+    new SubscriptionTicketService({ ttlMs: 45_000, maxPendingTickets: 100 })
+  );
   owner = await createUser("owner", true);
   collaborator = await createUser("collaborator", true);
   outsider = await createUser("outsider", true);

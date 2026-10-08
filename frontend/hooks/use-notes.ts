@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { buildNoteSubscriptionUrl, graphQLRequest } from "@/lib/graphql-client";
+import { graphQLRequest } from "@/lib/graphql-client";
+import { openNoteSubscription } from "@/lib/note-subscription";
 import type { Note, NoteReorder, NotesFilter, ToastKind } from "@/types/workspace";
 
 type UseNotesOptions = {
@@ -174,15 +175,6 @@ export function useNotes({
       return;
     }
 
-    const updatedEventSource = new EventSource(
-      buildNoteSubscriptionUrl(activeBoardId, activeShareToken, "noteUpdated"),
-      { withCredentials: true }
-    );
-    const deletedEventSource = new EventSource(
-      buildNoteSubscriptionUrl(activeBoardId, activeShareToken, "noteDeleted"),
-      { withCredentials: true }
-    );
-
     const handleUpdatedMessage = (event: Event) => {
       try {
         const payload = JSON.parse((event as MessageEvent<string>).data) as {
@@ -237,16 +229,24 @@ export function useNotes({
       pushToast("error", "Realtime connection interrupted");
     };
 
-    updatedEventSource.addEventListener("next", handleUpdatedMessage);
-    deletedEventSource.addEventListener("next", handleDeletedMessage);
-    updatedEventSource.onerror = handleRealtimeError;
-    deletedEventSource.onerror = handleRealtimeError;
+    const stopUpdatedSubscription = openNoteSubscription({
+      boardId: activeBoardId,
+      shareToken: activeShareToken,
+      eventName: "noteUpdated",
+      onMessage: handleUpdatedMessage,
+      onError: handleRealtimeError,
+    });
+    const stopDeletedSubscription = openNoteSubscription({
+      boardId: activeBoardId,
+      shareToken: activeShareToken,
+      eventName: "noteDeleted",
+      onMessage: handleDeletedMessage,
+      onError: handleRealtimeError,
+    });
 
     return () => {
-      updatedEventSource.removeEventListener("next", handleUpdatedMessage);
-      deletedEventSource.removeEventListener("next", handleDeletedMessage);
-      updatedEventSource.close();
-      deletedEventSource.close();
+      stopUpdatedSubscription();
+      stopDeletedSubscription();
     };
   }, [activeBoardId, activeShareToken, pushToast, sessionId]);
 

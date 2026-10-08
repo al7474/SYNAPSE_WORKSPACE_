@@ -3,7 +3,13 @@ import { GraphQLError } from "graphql";
 import type { OwnerMetadata } from "../modules/auth/auth.types.js";
 import type { NotesService } from "../modules/notes/notes.service.js";
 import type { BoardPermission, DeletedNoteEvent, Note } from "../modules/notes/notes.types.js";
-import { logger, redactShareToken } from "../observability/logger.js";
+import { logger } from "../observability/logger.js";
+import type {
+  SubscriptionEventName,
+  SubscriptionTicketService,
+} from "../modules/subscriptions/subscription-ticket.service.js";
+
+type SubscriptionAuthMode = "ticket" | "session";
 
 interface GraphQLContext {
   notesService: NotesService;
@@ -21,20 +27,15 @@ export interface NotePubSub {
   subscribe(topic: "NOTE_DELETED"): AsyncIterable<DeletedNoteEvent>;
 }
 
-export function buildSchema(pubSub: NotePubSub) {
+export function buildSchema(pubSub: NotePubSub, subscriptionTickets: SubscriptionTicketService) {
   async function* authorizedBoardIterator<T extends { boardId: string }>(
     source: AsyncIterable<T>,
     boardId: string,
     authorize: () => Promise<void>,
-    subscription: string,
-    shareToken: string | null | undefined
+    subscription: SubscriptionEventName,
+    authMode: SubscriptionAuthMode
   ): AsyncIterable<T> {
-    const fields = {
-      subscription,
-      boardId,
-      shareToken: redactShareToken(shareToken),
-      shareTokenPresent: Boolean(shareToken),
-    };
+    const fields = { subscription, boardId, authMode };
 
     try {
       for await (const event of source) {
@@ -84,6 +85,48 @@ export function buildSchema(pubSub: NotePubSub) {
     return ctx.emailVerified ? (ctx.userEmail ?? undefined) : undefined;
   }
 
+  function createSubscriptionAuthorizer(
+    ctx: GraphQLContext,
+    boardId: string,
+    event: SubscriptionEventName,
+    ticket: string | null | undefined
+  ): { authMode: SubscriptionAuthMode; authorize: () => Promise<void> } {
+    if (ticket) {
+      const grant = subscriptionTickets.redeem(ticket, { boardId, event });
+
+      return {
+        authMode: "ticket",
+        authorize: async () => {
+          if (!(await grant.revalidateSession())) {
+            throw new Error("Subscription session is no longer valid.");
+          }
+
+          await ctx.notesService.assertShareLinkActive(boardId, grant.shareTokenHash);
+        },
+      };
+    }
+
+    const sessionId = requireSessionId(ctx);
+
+    return {
+      authMode: "session",
+      authorize: async () => {
+        if (!(await ctx.revalidateSession())) {
+          throw new Error("Missing authenticated session cookie.");
+        }
+
+        await ctx.notesService.assertBoardAccess(
+          sessionId,
+          verifiedUserEmail(ctx),
+          boardId,
+          undefined,
+          false,
+          ctx.ownerMetadata
+        );
+      },
+    };
+  }
+
   return createSchema<GraphQLContext>({
     typeDefs: /* GraphQL */ `
       type Note {
@@ -125,6 +168,16 @@ export function buildSchema(pubSub: NotePubSub) {
         updatedAt: String!
       }
 
+      enum SubscriptionEvent {
+        noteUpdated
+        noteDeleted
+      }
+
+      type SubscriptionTicket {
+        ticket: String!
+        expiresAt: String!
+      }
+
       type Query {
         listBoards: [Board!]!
         listBoardCollaborators(boardId: ID!): [BoardCollaborator!]!
@@ -145,11 +198,12 @@ export function buildSchema(pubSub: NotePubSub) {
         updateNote(boardId: ID!, shareToken: String, id: ID!, title: String, content: String): Note!
         deleteNote(boardId: ID!, shareToken: String, id: ID!): Boolean!
         reindexPendingEmbeddings(boardId: ID!, shareToken: String, limit: Int): Int!
+        createSubscriptionTicket(boardId: ID!, shareToken: String!, event: SubscriptionEvent!): SubscriptionTicket!
       }
 
       type Subscription {
-        noteUpdated(boardId: ID!, shareToken: String): Note!
-        noteDeleted(boardId: ID!, shareToken: String): ID!
+        noteUpdated(boardId: ID!, ticket: String): Note!
+        noteDeleted(boardId: ID!, ticket: String): ID!
       }
     `,
     resolvers: {
@@ -286,6 +340,20 @@ export function buildSchema(pubSub: NotePubSub) {
 
           return Boolean(deletedNote);
         },
+        createSubscriptionTicket: async (_parent, args, ctx) => {
+          requireSessionId(ctx);
+          const shareTokenHash = await ctx.notesService.resolveShareTokenHash(
+            args.boardId,
+            args.shareToken
+          );
+
+          return subscriptionTickets.issue({
+            boardId: args.boardId,
+            event: args.event as SubscriptionEventName,
+            shareTokenHash,
+            revalidateSession: ctx.revalidateSession,
+          });
+        },
         reindexPendingEmbeddings: async (_parent, args, ctx) => {
           const sessionId = requireSessionId(ctx);
           const updatedNotes = await ctx.notesService.reindexPendingEmbeddingsForBoard(
@@ -307,72 +375,50 @@ export function buildSchema(pubSub: NotePubSub) {
       Subscription: {
         noteUpdated: {
           subscribe: async (_parent, args, ctx) => {
-            const sessionId = requireSessionId(ctx);
-            const authorize = async () => {
-              if (!(await ctx.revalidateSession())) {
-                throw new Error("Missing authenticated session cookie.");
-              }
-
-              await ctx.notesService.assertBoardAccess(
-                sessionId,
-                verifiedUserEmail(ctx),
-                args.boardId,
-                args.shareToken ?? undefined,
-                false,
-                ctx.ownerMetadata
-              );
-            };
+            const { authMode, authorize } = createSubscriptionAuthorizer(
+              ctx,
+              args.boardId,
+              "noteUpdated",
+              args.ticket
+            );
 
             await authorize();
-            const fields = {
+            logger.info("sse.subscription.opened", {
               subscription: "noteUpdated",
               boardId: args.boardId,
-              shareToken: redactShareToken(args.shareToken),
-              shareTokenPresent: Boolean(args.shareToken),
-            };
-            logger.info("sse.subscription.opened", fields);
+              authMode,
+            });
             return authorizedBoardIterator(
               pubSub.subscribe("NOTE_UPDATED"),
               args.boardId,
               authorize,
               "noteUpdated",
-              args.shareToken
+              authMode
             );
           },
           resolve: (payload: Note) => payload,
         },
         noteDeleted: {
           subscribe: async (_parent, args, ctx) => {
-            const sessionId = requireSessionId(ctx);
-            const authorize = async () => {
-              if (!(await ctx.revalidateSession())) {
-                throw new Error("Missing authenticated session cookie.");
-              }
-
-              await ctx.notesService.assertBoardAccess(
-                sessionId,
-                verifiedUserEmail(ctx),
-                args.boardId,
-                args.shareToken ?? undefined,
-                false,
-                ctx.ownerMetadata
-              );
-            };
+            const { authMode, authorize } = createSubscriptionAuthorizer(
+              ctx,
+              args.boardId,
+              "noteDeleted",
+              args.ticket
+            );
 
             await authorize();
-            const fields = {
+            logger.info("sse.subscription.opened", {
               subscription: "noteDeleted",
               boardId: args.boardId,
-              shareToken: redactShareToken(args.shareToken),
-              shareTokenPresent: Boolean(args.shareToken),
-            };
-            logger.info("sse.subscription.opened", fields);
+              authMode,
+            });
             return authorizedBoardIterator(
               pubSub.subscribe("NOTE_DELETED"),
               args.boardId,
               authorize,
               "noteDeleted",
-              args.shareToken
+              authMode
             );
           },
           resolve: (payload: DeletedNoteEvent) => payload.id,

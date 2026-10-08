@@ -77,16 +77,44 @@ export async function graphQLRequest<T>(
   return payload.data;
 }
 
+export type NoteSubscriptionEventName = "noteUpdated" | "noteDeleted";
+
+export type SubscriptionTicket = {
+  ticket: string;
+  expiresAt: string;
+};
+
+export async function requestSubscriptionTicket(
+  boardId: string,
+  shareToken: string,
+  eventName: NoteSubscriptionEventName
+): Promise<SubscriptionTicket> {
+  const data = await graphQLRequest<{ createSubscriptionTicket: SubscriptionTicket }>(
+    `
+      mutation CreateSubscriptionTicket($boardId: ID!, $shareToken: String!, $event: SubscriptionEvent!) {
+        createSubscriptionTicket(boardId: $boardId, shareToken: $shareToken, event: $event) {
+          ticket
+          expiresAt
+        }
+      }
+    `,
+    { boardId, shareToken, event: eventName }
+  );
+
+  return data.createSubscriptionTicket;
+}
+
+/** Share tokens never appear in the URL. Share-link subscriptions carry only a single-use ticket. */
 export function buildNoteSubscriptionUrl(
   boardId: string,
-  shareToken: string | null,
-  eventName: "noteUpdated" | "noteDeleted" = "noteUpdated"
+  ticket: string | null,
+  eventName: NoteSubscriptionEventName = "noteUpdated"
 ): string {
   const subscriptionQuery =
     eventName === "noteUpdated"
       ? `
-        subscription NoteUpdated($boardId: ID!, $shareToken: String) {
-          noteUpdated(boardId: $boardId, shareToken: $shareToken) {
+        subscription NoteUpdated($boardId: ID!, $ticket: String) {
+          noteUpdated(boardId: $boardId, ticket: $ticket) {
             id
             boardId
             title
@@ -96,15 +124,14 @@ export function buildNoteSubscriptionUrl(
         }
       `
       : `
-        subscription NoteDeleted($boardId: ID!, $shareToken: String) {
-          noteDeleted(boardId: $boardId, shareToken: $shareToken)
+        subscription NoteDeleted($boardId: ID!, $ticket: String) {
+          noteDeleted(boardId: $boardId, ticket: $ticket)
         }
       `;
 
   const queryParam = encodeURIComponent(subscriptionQuery);
-  const variablesParam = encodeURIComponent(JSON.stringify({ boardId, shareToken }));
+  const variablesParam = encodeURIComponent(JSON.stringify(ticket ? { boardId, ticket } : { boardId }));
 
   return `${GRAPHQL_ENDPOINT}?query=${queryParam}&variables=${variablesParam}`;
 }
-
 export { GRAPHQL_ENDPOINT };
