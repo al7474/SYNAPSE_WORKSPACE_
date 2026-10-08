@@ -43,7 +43,7 @@ Keep GraphQL and browser persistence inside hooks or `lib/` modules. Components 
 - `pnpm db:migrate`: apply committed Prisma migrations with `prisma migrate deploy`.
 - `pnpm db:migrate:dev`: create/apply a development migration after changing `schema.prisma`.
 - `pnpm db:reset`: reset the local database, apply Prisma migrations, and run the configured seed.
-- `pnpm db:seed`: run the Prisma demo seed.
+- `pnpm db:seed`: run the Prisma demo seed. It creates a verified demo account from `DEMO_USER_EMAIL` and `DEMO_USER_PASSWORD` in `backend/.env` and gives it the demo board with sample notes. The seed is skipped when both variables are unset and refused when `NODE_ENV=production`.
 - `pnpm db:down`: stop local database.
 - `pnpm smoke:auth`: exercise the HTTP account session flow.
 - `pnpm smoke:auth:tokens`: exercise bcrypt and one-time token lifecycle rules.
