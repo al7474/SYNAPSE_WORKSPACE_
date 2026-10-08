@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@config "../tailwind.config.ts";
 @import "@blocknote/react/style.css";
 
 :root {
@@ -20,27 +21,58 @@
 	--input: 0 0% 15%;
 	--ring: 0 0% 63%;
 	--radius: 0rem;
+	--overlay: 255 255 255;
+	--shade: 0 0 0;
+	--card-translucent: 23 23 23;
+	--success: 51 209 122;
+	--success-strong: 67 194 81;
+	--success-foreground: 126 226 168;
+	--warning: 246 196 83;
+	--danger: 245 47 57;
+	--danger-foreground: 252 165 165;
+	--danger-soft: 239 179 175;
+	--danger-hover: 254 202 202;
+	--danger-border: 106 48 56;
+	--surface-sunken: 21 21 21;
+	--primary-hover: 229 229 229;
+	--primary-pressed: 212 212 212;
+	--border-strong: 72 72 72;
+	--subtle: 115 115 115;
+	--soft: 214 214 214;
+	--neutral-strong: 138 138 138;
+	--neutral-soft: 143 143 143;
+	--muted-strong: 163 163 163;
+	--focus-muted: 176 176 176;
+	--placeholder-muted: 112 112 112;
+	--bright: 255 255 255;
+	--success-soft: 52 211 153;
+	--success-text: 110 231 183;
+	--success-border: 16 185 129;
+	--warning-text: 252 211 77;
+	--warning-border: 245 158 11;
+	--note-surface: 24 24 24;
+	--note-field: 17 17 17;
 }
 
 body {
 	min-height: 100vh;
-	background-color: #0a0a0a;
-	color: #fafafa;
+	background-color: hsl(var(--background));
+	color: hsl(var(--foreground));
 	color-scheme: dark;
 }
 
 .note-editor-surface {
-	background-color: #181818;
+	background-color: rgb(var(--note-surface));
 	background-image:
-		linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-		linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+		linear-gradient(rgb(var(--overlay) / 0.025) 1px, transparent 1px),
+		linear-gradient(90deg, rgb(var(--overlay) / 0.025) 1px, transparent 1px);
 	background-size: 32px 32px;
-	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+	box-shadow: inset 0 1px 0 rgb(var(--overlay) / 0.08), inset 0 0 0 1px rgb(var(--shade) / 0.35);
 }
 
 .note-editor-field {
-	background-color: #111111;
-	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), inset 0 0 0 1px rgba(0, 0, 0, 0.3);
+	background-color: rgb(var(--note-field));
+	box-shadow: inset 0 1px 0 rgb(var(--overlay) / 0.04), inset 0 0 0 1px rgb(var(--shade) / 0.3);
 }
 
 @keyframes note-card-settle {

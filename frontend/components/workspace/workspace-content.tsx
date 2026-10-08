@@ -1,5 +1,6 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
 import { RefreshCw } from "lucide-react";
 import { BoardAccessPanel } from "@/components/workspace/board-access-panel";
 import { NoteEditorPanel } from "@/components/workspace/note-editor-panel";
@@ -80,19 +81,19 @@ export function WorkspaceContent({
       <div className={isNoteEditorOpen ? "flex min-w-0 flex-1 flex-col overflow-y-auto p-4" : "min-w-0 flex-1 overflow-y-auto p-4"}>
         {!isNoteEditorOpen && (
           <div className="group mb-4 flex min-h-4.25 items-center justify-between gap-4">
-            <p className="min-w-0 truncate text-[11px] uppercase tracking-[0.55px] text-[#a1a1a1]">
+            <p className="min-w-0 truncate text-label uppercase tracking-label-lg text-muted-foreground">
               {activeBoard ? activeBoard.name : "Select a board"} / {visibleNotes.length} notes
             </p>
             <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-              <button
+              <Button variant="unstyled"
                 type="button"
-                className="grid h-7 w-7 place-items-center text-[#a1a1a1] hover:text-[#fafafa]"
+                className="grid h-7 w-7 place-items-center text-muted-foreground hover:text-foreground"
                 onClick={() => void onRefreshBoards()}
                 title="Refresh boards"
                 aria-label="Refresh boards"
               >
                 {isBoardsLoading ? "..." : <RefreshCw size={14} aria-hidden="true" />}
-              </button>
+              </Button>
             </div>
           </div>
         )}

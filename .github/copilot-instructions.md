@@ -34,7 +34,7 @@ You are an expert AI pair programmer. Always generate code following these stric
 ## UI, UX & Design Consistency
 - **Design System:** Always use `shadcn/ui` components located in `@/components/ui/` instead of writing raw HTML elements.
 - **Styling:** Rely strictly on Tailwind CSS utility classes and semantic variables (e.g., `bg-background`, `text-foreground`, `bg-primary`, `rounded-md`). Do NOT hardcode hex colors or custom pixel values.
-- **Layouts:** Isolate layouts (e.g., Sidebars, Navigation Headers) using Next.js Layout files to guarantee a consistent workspace shell across all views.
+- **Layouts:** Use Next.js layout files for route-level shells (for example `app/layout.tsx`). The workspace is a single route, so `app/page.tsx` stays the composition root that wires hooks to the sidebar, header, and content components, as defined in `docs/ARCHITECTURE.md`.
 
 ## Language & Communication
 - **Chat Interaction:** The user may prompt you and chat with you in Spanish. You should reply in Spanish during the chat conversation to keep communication comfortable.

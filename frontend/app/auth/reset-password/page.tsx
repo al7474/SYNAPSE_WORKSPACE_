@@ -1,5 +1,6 @@
 "use client";
 
+import { Heading } from "@/components/ui/heading";
 import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
@@ -7,9 +8,9 @@ import { Input } from "@/components/ui/input";
 import { resetPassword } from "@/lib/session";
 
 const INPUT_CLASS_NAME =
-  "h-[42px] min-w-0 rounded-none border-white/10 bg-transparent px-[17px] py-[13px] font-mono text-[12px] font-normal leading-normal text-[#a1a1a1] placeholder:text-[#a1a1a1] focus-visible:ring-0";
+  "h-control min-w-0 rounded-none border-overlay/10 bg-transparent px-inset-lg py-inset font-mono text-caption font-normal leading-normal text-muted-foreground placeholder:text-muted-foreground focus-visible:ring-0";
 const SUBMIT_CLASS_NAME =
-  "h-[42px] w-full rounded-none border border-white/10 bg-transparent px-[17px] py-[13px] font-mono text-[12px] font-normal uppercase leading-4 tracking-[0.6px] text-[#fafafa] shadow-none hover:bg-white/5";
+  "h-control w-full rounded-none border border-overlay/10 bg-transparent px-inset-lg py-inset font-mono text-caption font-normal uppercase leading-4 tracking-caps text-foreground shadow-none hover:bg-overlay/5";
 
 function readAndClearActionToken(): string {
   const url = new URL(window.location.href);
@@ -80,14 +81,14 @@ export default function ResetPasswordPage() {
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#0a0a0a] px-4 py-8 text-white">
-      <section className="flex w-full max-w-[448px] flex-col gap-6 border border-white/10 bg-[rgba(23,23,23,0.4)] p-10">
+    <main className="flex min-h-screen items-center justify-center bg-background px-4 py-8 text-bright">
+      <section className="flex w-full max-w-auth-card flex-col gap-6 border border-overlay/10 bg-card-translucent/40 p-10">
         <div>
-          <p className="font-mono text-[11px] uppercase tracking-[0.55px] text-[#a1a1a1]">Synapse Workspace</p>
-          <h1 className="pt-3 font-sans text-[22px] font-normal leading-7 text-[#fafafa]">
+          <p className="font-mono text-label uppercase tracking-label-lg text-muted-foreground">Synapse Workspace</p>
+          <Heading level={1} className="pt-3 font-sans text-heading font-normal leading-7 text-foreground">
             {isComplete ? "Password updated" : "Reset your password"}
-          </h1>
-          <p className="pt-3 font-mono text-[12px] leading-5 text-[#a1a1a1]">
+          </Heading>
+          <p className="pt-3 font-mono text-caption leading-5 text-muted-foreground">
             {isComplete
               ? "Your existing account sessions were signed out. You can now sign in with the new password."
               : "Choose a new password for your Synapse Workspace account."}
@@ -120,7 +121,7 @@ export default function ResetPasswordPage() {
               className={INPUT_CLASS_NAME}
               required
             />
-            {error && <p className="break-words font-mono text-[12px] text-red-300">{error}</p>}
+            {error && <p className="break-words font-mono text-caption text-danger-foreground">{error}</p>}
             <Button type="submit" disabled={isSubmitting} className={SUBMIT_CLASS_NAME}>
               {isSubmitting ? "Updating..." : "Update Password"}
             </Button>

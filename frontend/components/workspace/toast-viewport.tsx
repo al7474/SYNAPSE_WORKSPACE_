@@ -9,13 +9,13 @@ type ToastViewportProps = {
 
 export function ToastViewport({ toasts }: ToastViewportProps) {
   return (
-    <div className="fixed right-4 top-4 grid w-[min(340px,calc(100%-24px))] gap-2">
+    <div className="fixed right-4 top-4 grid w-toast max-w-[calc(100%-1.5rem)] gap-2">
       {toasts.map((toast) => (
         <Card
           key={toast.id}
           className={
             toast.kind === "success"
-              ? "border-emerald-500/40"
+              ? "border-success-border/40"
               : toast.kind === "error"
                 ? "border-destructive/50"
                 : "border-primary/40"

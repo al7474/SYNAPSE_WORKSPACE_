@@ -1,5 +1,6 @@
 "use client";
 
+import { Heading } from "@/components/ui/heading";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -61,20 +62,20 @@ export default function VerifyEmailPage() {
   }, []);
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#0a0a0a] px-4 py-8 text-white">
-      <section className="flex w-full max-w-[448px] flex-col gap-6 border border-white/10 bg-[rgba(23,23,23,0.4)] p-10">
+    <main className="flex min-h-screen items-center justify-center bg-background px-4 py-8 text-bright">
+      <section className="flex w-full max-w-auth-card flex-col gap-6 border border-overlay/10 bg-card-translucent/40 p-10">
         <div>
-          <p className="font-mono text-[11px] uppercase tracking-[0.55px] text-[#a1a1a1]">Synapse Workspace</p>
-          <h1 className="pt-3 font-sans text-[22px] font-normal leading-7 text-[#fafafa]">
+          <p className="font-mono text-label uppercase tracking-label-lg text-muted-foreground">Synapse Workspace</p>
+          <Heading level={1} className="pt-3 font-sans text-heading font-normal leading-7 text-foreground">
             {state === "success" ? "Email verified" : state === "error" ? "Verification unavailable" : "Verify your email"}
-          </h1>
-          <p className="pt-3 font-mono text-[12px] leading-5 text-[#a1a1a1]" aria-live="polite">
+          </Heading>
+          <p className="pt-3 font-mono text-caption leading-5 text-muted-foreground" aria-live="polite">
             {message}
           </p>
         </div>
 
         <Link href="/" className="w-full">
-          <Button className="h-[42px] w-full rounded-none border border-white/10 bg-transparent font-mono text-[12px] uppercase tracking-[0.6px] text-[#fafafa] shadow-none hover:bg-white/5">
+          <Button className="h-control w-full rounded-none border border-overlay/10 bg-transparent font-mono text-caption uppercase tracking-caps text-foreground shadow-none hover:bg-overlay/5">
             {state === "success" ? "Return to Workspace" : "Back to Sign In"}
           </Button>
         </Link>

@@ -1,5 +1,7 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
+import { Heading } from "@/components/ui/heading";
 import { useLayoutEffect, useRef, useState } from "react";
 import { GripVertical, Plus } from "lucide-react";
 import type { Note, NoteReorder } from "@/types/workspace";
@@ -160,7 +162,7 @@ export function NotesGrid({
     <div
       ref={gridRef}
       className={[
-        "grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4",
+        "grid grid-cols-[repeat(auto-fill,minmax(13.75rem,1fr))] gap-4",
         isPointerActive && "select-none",
       ].filter(Boolean).join(" ")}
       data-testid="notes-grid"
@@ -238,21 +240,21 @@ export function NotesGrid({
       onPointerCancel={resetDragState}
     >
       {!isLoading && canEditBoard && (
-        <button
+        <Button variant="unstyled"
           type="button"
           data-testid="create-note"
-          className="grid aspect-square min-h-45 place-items-center border border-dashed border-[rgba(255,255,255,0.1)] bg-transparent text-[#a1a1a1] hover:border-[#737373]"
+          className="grid aspect-square min-h-45 place-items-center border border-dashed border-overlay/10 bg-transparent text-muted-foreground hover:border-subtle"
           onClick={() => void onCreateNote()}
           disabled={isCreating}
         >
           <div className="text-center">
             <Plus size={24} className="mx-auto mb-2" aria-hidden="true" />
-            <p className="text-[11px] uppercase tracking-[0.55px]">{isCreating ? "Creating..." : "Create New Note"}</p>
+            <p className="text-label uppercase tracking-label-lg">{isCreating ? "Creating..." : "Create New Note"}</p>
           </div>
-        </button>
+        </Button>
       )}
 
-      {isLoading && <p className="text-xs uppercase tracking-[0.55px] text-[#a1a1a1]">Loading notes...</p>}
+      {isLoading && <p className="text-xs uppercase tracking-label-lg text-muted-foreground">Loading notes...</p>}
 
       {!isLoading && notes.map((note, noteIndex) => {
         const preview = (note.content || "No content yet").replace(/\s+/g, " ").trim().slice(0, 160);
@@ -271,7 +273,7 @@ export function NotesGrid({
             {isDropGap && (
               <div
                 aria-hidden="true"
-                className="min-h-45 rounded-sm border border-dashed border-[rgba(255,255,255,0.28)] bg-transparent transition-all duration-200"
+                className="min-h-45 rounded-sm border border-dashed border-overlay/28 bg-transparent transition-all duration-200"
               />
             )}
             <article
@@ -280,10 +282,10 @@ export function NotesGrid({
               className={[
                 "flex aspect-square min-h-45 min-w-0 cursor-pointer flex-col overflow-hidden border p-4.25 transition-[transform,opacity,box-shadow,border-color] duration-200 ease-out",
                 note.id === selectedId
-                  ? "border-[#737373] bg-[rgba(23,23,23,0.4)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)]"
-                  : "border-[rgba(255,255,255,0.1)] bg-[rgba(23,23,23,0.4)] hover:border-[#737373]",
+                  ? "border-subtle bg-card-translucent/40 shadow-card-inset"
+                  : "border-overlay/10 bg-card-translucent/40 hover:border-subtle",
                 isDragged &&
-                  "pointer-events-none z-10 scale-[1.02] -translate-y-1 border-[#fafafa] shadow-[0_12px_28px_rgba(0,0,0,0.42)]",
+                  "pointer-events-none z-10 scale-[1.02] -translate-y-1 border-foreground shadow-card-lift",
                 settlingNoteId === note.id && "note-card-settle",
               ].filter(Boolean).join(" ")}
             onPointerDown={(event) => handlePointerDown(event, note.id)}
@@ -306,29 +308,29 @@ export function NotesGrid({
             tabIndex={0}
             >
             <div className="flex min-w-0 items-start justify-between gap-3">
-              <h3 className="min-w-0 truncate text-xs uppercase tracking-[0.6px] text-[#fafafa]">
+              <Heading level={3} className="min-w-0 truncate text-xs uppercase tracking-caps text-foreground">
                 {note.title || "Untitled"}
-              </h3>
+              </Heading>
               <div className="flex shrink-0 items-center gap-2">
                 {canEditBoard && (
                   <GripVertical
                     size={14}
-                    className="cursor-grab text-[#737373] active:cursor-grabbing"
+                    className="cursor-grab text-subtle active:cursor-grabbing"
                     aria-label="Drag to reorder note"
                   />
                 )}
                 <span
-                  className={isIndexed ? "mt-0.5 h-3 w-3 bg-[#43c251]" : "mt-0.5 h-3 w-3 bg-[#f52f39]"}
+                  className={isIndexed ? "mt-0.5 h-3 w-3 bg-success-strong" : "mt-0.5 h-3 w-3 bg-danger"}
                   aria-label={isIndexed ? "Indexed note" : "Note indexing pending"}
                 />
               </div>
             </div>
 
-            <p className="mt-3 line-clamp-4 text-xs leading-[19.5px] text-[#a1a1a1]">
+            <p className="mt-3 line-clamp-4 text-xs leading-title text-muted-foreground">
               {preview}
               {(note.content || "").length > 160 ? "..." : ""}
             </p>
-            <div className="mt-auto flex items-center justify-between border-t border-[rgba(255,255,255,0.1)] pt-3.25 text-[10px] uppercase tracking-[0.5px] text-[#a1a1a1]">
+            <div className="mt-auto flex items-center justify-between border-t border-overlay/10 pt-3.25 text-micro uppercase tracking-label-sm text-muted-foreground">
               <span>{note.embeddingPending ? "Index pending" : "Updated recently"}</span>
               <span>
                 {semanticResults && note.semanticScore !== null && note.semanticScore !== undefined
@@ -346,7 +348,7 @@ export function NotesGrid({
         dropIndex === notes.filter((note) => note.id !== draggedNoteId).length && (
         <div
           aria-hidden="true"
-          className="min-h-45 rounded-sm border border-dashed border-[rgba(255,255,255,0.28)] bg-transparent transition-all duration-200"
+          className="min-h-45 rounded-sm border border-dashed border-overlay/28 bg-transparent transition-all duration-200"
         />
       )}
     </div>

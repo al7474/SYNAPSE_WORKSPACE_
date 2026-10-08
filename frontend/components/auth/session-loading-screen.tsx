@@ -1,5 +1,6 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type SessionLoadingScreenProps = {
@@ -19,13 +20,13 @@ export function SessionLoadingScreen({ error, onRetry }: SessionLoadingScreenPro
             {error ?? "Initializing secure workspace environment..."}
           </p>
           {error && onRetry ? (
-            <button
+            <Button variant="unstyled"
               type="button"
               className="mt-4 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
               onClick={onRetry}
             >
               Retry connection
-            </button>
+            </Button>
           ) : null}
         </CardContent>
       </Card>

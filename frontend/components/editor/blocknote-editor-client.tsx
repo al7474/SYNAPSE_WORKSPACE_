@@ -1,5 +1,6 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
 import { useEffect, useRef } from "react";
 import { ListChecks } from "lucide-react";
 import type { PartialBlock } from "@blocknote/core";
@@ -80,11 +81,11 @@ export function BlockNoteEditorClient({
 
   return (
     <div className="flex min-h-0 flex-col">
-      <div className="flex items-center justify-between border-b border-[#484848] bg-[#151515] px-3 py-2">
-        <span className="text-[11px] uppercase tracking-[0.4px] text-[#8f8f8f]">Note content</span>
-        <button
+      <div className="flex items-center justify-between border-b border-border-strong bg-surface-sunken px-3 py-2">
+        <span className="text-label uppercase tracking-label-xs text-neutral-soft">Note content</span>
+        <Button variant="unstyled"
           type="button"
-          className="inline-flex items-center gap-1.5 border border-[#484848] px-2.5 py-1.5 text-xs text-[#d6d6d6] transition-colors hover:border-[#8a8a8a] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 border border-border-strong px-2.5 py-1.5 text-xs text-soft transition-colors hover:border-neutral-strong hover:text-bright disabled:cursor-not-allowed disabled:opacity-50"
           onClick={() => {
             const lastBlock = editor.document[editor.document.length - 1];
 
@@ -104,7 +105,7 @@ export function BlockNoteEditorClient({
         >
           <ListChecks size={14} aria-hidden="true" />
           Add task
-        </button>
+        </Button>
       </div>
       <div className="min-h-0 flex-1">
         <BlockNoteView

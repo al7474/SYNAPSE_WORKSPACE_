@@ -1,5 +1,6 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
 import { LogOut, Menu, X } from "lucide-react";
 
 type WorkspaceHeaderProps = {
@@ -10,33 +11,33 @@ type WorkspaceHeaderProps = {
 
 export function WorkspaceHeader({ isSidebarOpen, onToggleSidebar, onLogout }: WorkspaceHeaderProps) {
   return (
-    <header className="z-50 flex h-[61px] shrink-0 items-center justify-between border-b border-[rgba(255,255,255,0.1)] bg-[#0a0a0a] px-4">
+    <header className="z-50 flex h-row-lg shrink-0 items-center justify-between border-b border-overlay/10 bg-background px-4">
       <div className="flex min-w-0 items-center gap-2">
-        <button
+        <Button variant="unstyled"
           type="button"
-          className="grid h-9 w-9 shrink-0 place-items-center border border-[rgba(255,255,255,0.1)] text-[#a1a1a1] md:hidden"
+          className="grid h-9 w-9 shrink-0 place-items-center border border-overlay/10 text-muted-foreground md:hidden"
           onClick={onToggleSidebar}
           aria-expanded={isSidebarOpen}
           aria-controls="workspace-sidebar"
           aria-label={isSidebarOpen ? "Close workspace navigation" : "Open workspace navigation"}
         >
           {isSidebarOpen ? <X size={17} /> : <Menu size={17} />}
-        </button>
-        <div className="grid h-9 w-9 place-items-center border border-[rgba(255,255,255,0.1)] bg-[#262626] text-[11px] tracking-[0.55px] text-[#fafafa]">
+        </Button>
+        <div className="grid h-9 w-9 place-items-center border border-overlay/10 bg-secondary text-label tracking-label-lg text-foreground">
           88
         </div>
       </div>
-      <button
+      <Button variant="unstyled"
         type="button"
         data-testid="logout"
-        className="flex h-9 shrink-0 items-center gap-2 border border-[rgba(255,255,255,0.1)] px-[13px] py-[9px] text-[11px] uppercase tracking-[0.55px] text-[#fafafa] hover:border-[#737373]"
+        className="flex h-9 shrink-0 items-center gap-2 border border-overlay/10 px-inset py-inset-sm text-label uppercase tracking-label-lg text-foreground hover:border-subtle"
         onClick={onLogout}
         aria-label="Log out"
         title="Log out"
       >
         <LogOut size={14} aria-hidden="true" />
         <span>Log Out</span>
-      </button>
+      </Button>
     </header>
   );
 }

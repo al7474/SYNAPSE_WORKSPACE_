@@ -1,5 +1,6 @@
 "use client";
 
+import { Input } from "@/components/ui/input";
 import { Search } from "lucide-react";
 import type { ComponentProps } from "react";
 import { EmailVerificationBanner } from "@/components/auth/email-verification-banner";
@@ -20,19 +21,19 @@ type WorkspaceShellProps = {
 
 export function WorkspaceShell({ emailVerification, header, sidebar, content, deleteDialog, toasts }: WorkspaceShellProps) {
   return (
-    <main className="flex h-dvh min-h-0 min-w-0 flex-col overflow-hidden bg-[#0a0a0a] font-mono text-[#fafafa]">
+    <main className="flex h-dvh min-h-0 min-w-0 flex-col overflow-hidden bg-background font-mono text-foreground">
       <WorkspaceHeader {...header} />
       {emailVerification && <EmailVerificationBanner {...emailVerification} />}
 
-      <div className="shrink-0 border-b border-[rgba(255,255,255,0.1)] px-4 pb-[13px] pt-3">
-        <div className="flex h-[42px] items-center gap-3 border border-[rgba(255,255,255,0.1)] bg-[rgba(23,23,23,0.4)] px-[17px]">
-          <Search size={16} className="shrink-0 text-[#a1a1a1]" aria-hidden="true" />
-          <input
+      <div className="shrink-0 border-b border-overlay/10 px-4 pb-inset pt-3">
+        <div className="flex h-control items-center gap-3 border border-overlay/10 bg-card-translucent/40 px-inset-lg">
+          <Search size={16} className="shrink-0 text-muted-foreground" aria-hidden="true" />
+          <Input variant="unstyled"
             value={content.searchText}
             onChange={(event) => content.onSearchTextChange(event.target.value)}
             placeholder="Search boards and notes"
             aria-label="Search boards and notes"
-            className="min-w-0 flex-1 bg-transparent text-xs text-[#fafafa] outline-none placeholder:text-[#a1a1a1]"
+            className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
           />
         </div>
       </div>
