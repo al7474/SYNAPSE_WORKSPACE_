@@ -63,7 +63,7 @@ Keep GraphQL and browser persistence inside hooks or `lib/` modules. Components 
 ### Board sharing and authorization
 
 - Every board and note resolver requires a validated account or guest session and checks ownership, collaborator permission, or share-link permission in the backend.
-- Collaborator email authorization uses the authenticated account email resolved into the GraphQL context; browser-provided identity headers are not trusted.
+- Collaborator email authorization uses the authenticated account email resolved into the GraphQL context only when that email is verified; unverified accounts never match board invitations by email. Browser-provided identity headers are not trusted.
 - Share links use 32 cryptographically random bytes (256 bits), encoded as base64url. PostgreSQL stores only the SHA-256 token hash in `share_token_hash`.
 - The raw token is returned only by `createShareLink`. Generating a new link replaces the stored hash and invalidates the previous link. Owners can revoke a link, which clears the hash.
 - Share links support `view` and `edit`. Read operations accept either permission; note writes require `edit` and are checked again for every request.

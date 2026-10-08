@@ -79,6 +79,11 @@ export function buildSchema(pubSub: NotePubSub) {
     return sessionId;
   }
 
+  /** Unverified accounts must not match board invitations by email. */
+  function verifiedUserEmail(ctx: GraphQLContext): string | undefined {
+    return ctx.emailVerified ? (ctx.userEmail ?? undefined) : undefined;
+  }
+
   return createSchema<GraphQLContext>({
     typeDefs: /* GraphQL */ `
       type Note {
@@ -157,7 +162,7 @@ export function buildSchema(pubSub: NotePubSub) {
           const sessionId = requireSessionId(ctx);
           return ctx.notesService.listBoards(
             sessionId,
-            ctx.userEmail ?? undefined,
+            verifiedUserEmail(ctx),
             ctx.ownerMetadata
           );
         },
@@ -169,7 +174,7 @@ export function buildSchema(pubSub: NotePubSub) {
           const sessionId = requireSessionId(ctx);
           return ctx.notesService.accessSharedBoard(
             sessionId,
-            ctx.userEmail ?? undefined,
+            verifiedUserEmail(ctx),
             args.token,
             ctx.ownerMetadata
           );
@@ -178,7 +183,7 @@ export function buildSchema(pubSub: NotePubSub) {
           const sessionId = requireSessionId(ctx);
           return ctx.notesService.listNotes({
             ownerId: sessionId,
-            userEmail: ctx.userEmail ?? undefined,
+            userEmail: verifiedUserEmail(ctx),
             ownerMetadata: ctx.ownerMetadata,
             boardId: args.boardId,
             shareToken: args.shareToken ?? undefined,
@@ -189,7 +194,7 @@ export function buildSchema(pubSub: NotePubSub) {
           return ctx.notesService.semanticSearch({
             ...args,
             ownerId: sessionId,
-            userEmail: ctx.userEmail ?? undefined,
+            userEmail: verifiedUserEmail(ctx),
             ownerMetadata: ctx.ownerMetadata,
             shareToken: args.shareToken ?? undefined,
           });
@@ -245,7 +250,7 @@ export function buildSchema(pubSub: NotePubSub) {
           const note = await ctx.notesService.createNote({
             ...args,
             ownerId: sessionId,
-            userEmail: ctx.userEmail ?? undefined,
+            userEmail: verifiedUserEmail(ctx),
             ownerMetadata: ctx.ownerMetadata,
             shareToken: args.shareToken ?? undefined,
           });
@@ -257,7 +262,7 @@ export function buildSchema(pubSub: NotePubSub) {
           const note = await ctx.notesService.updateNote({
             ...args,
             ownerId: sessionId,
-            userEmail: ctx.userEmail ?? undefined,
+            userEmail: verifiedUserEmail(ctx),
             ownerMetadata: ctx.ownerMetadata,
             shareToken: args.shareToken ?? undefined,
           });
@@ -268,7 +273,7 @@ export function buildSchema(pubSub: NotePubSub) {
           const sessionId = requireSessionId(ctx);
           const deletedNote = await ctx.notesService.deleteNoteWithMetadata(
             sessionId,
-            ctx.userEmail ?? undefined,
+            verifiedUserEmail(ctx),
             args.boardId,
             args.shareToken ?? undefined,
             args.id,
@@ -285,7 +290,7 @@ export function buildSchema(pubSub: NotePubSub) {
           const sessionId = requireSessionId(ctx);
           const updatedNotes = await ctx.notesService.reindexPendingEmbeddingsForBoard(
             sessionId,
-            ctx.userEmail ?? undefined,
+            verifiedUserEmail(ctx),
             args.boardId,
             args.shareToken ?? undefined,
             args.limit ?? 20,
@@ -310,7 +315,7 @@ export function buildSchema(pubSub: NotePubSub) {
 
               await ctx.notesService.assertBoardAccess(
                 sessionId,
-                ctx.userEmail ?? undefined,
+                verifiedUserEmail(ctx),
                 args.boardId,
                 args.shareToken ?? undefined,
                 false,
@@ -346,7 +351,7 @@ export function buildSchema(pubSub: NotePubSub) {
 
               await ctx.notesService.assertBoardAccess(
                 sessionId,
-                ctx.userEmail ?? undefined,
+                verifiedUserEmail(ctx),
                 args.boardId,
                 args.shareToken ?? undefined,
                 false,

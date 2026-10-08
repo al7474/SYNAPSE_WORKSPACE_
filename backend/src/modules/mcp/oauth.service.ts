@@ -341,7 +341,7 @@ export class McpOAuthService {
       token,
       clientId: row.client.clientId,
       userId: String(row.userId),
-      userEmail: row.user.email,
+      userEmail: row.user.emailVerifiedAt ? row.user.email : undefined,
       scopes: row.scopes.filter(isMcpScope),
       expiresAt: Math.floor(row.expiresAt.getTime() / 1000),
       resource: row.resource,

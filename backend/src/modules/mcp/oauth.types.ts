@@ -57,7 +57,7 @@ export interface McpAccessTokenContext {
   token: string;
   clientId: string;
   userId: string;
-  userEmail: string;
+  userEmail?: string;
   scopes: McpScope[];
   expiresAt: number;
   resource: string | null;
