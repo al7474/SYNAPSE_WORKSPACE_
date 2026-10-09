@@ -48,6 +48,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Generate Prisma Client
+        run: pnpm db:generate
+        env:
+          DATABASE_URL: postgresql://postgres@127.0.0.1:5432/synapse_test
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
