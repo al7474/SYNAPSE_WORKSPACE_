@@ -1,4 +1,8 @@
-import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test, type BrowserContext, type Locator, type Page } from "@playwright/test";
+
+function noteDescription(page: Page): Locator {
+  return page.getByLabel("Note description").locator('[contenteditable="true"]');
+}
 
 async function enterDemo(page: Page): Promise<void> {
   await page.goto("/");
@@ -12,7 +16,7 @@ async function createSavedNote(page: Page, title: string, content: string): Prom
   await page.getByTestId("create-note").click();
   await expect(page.getByLabel("Note title")).toHaveValue("Untitled Note");
   await page.getByLabel("Note title").fill(title);
-  await page.getByLabel("Note description").fill(content);
+  await noteDescription(page).fill(content);
   await expect(page.getByTestId("autosave-status")).toHaveText(/Last saved: \d/, {
     timeout: 10_000,
   });
@@ -57,7 +61,7 @@ test("creates a note and autosaves title and content", async ({ page }) => {
   await createSavedNote(page, "Launch roadmap", "launch roadmap");
 
   await expect(page.getByLabel("Note title")).toHaveValue("Launch roadmap");
-  await expect(page.getByLabel("Note description")).toHaveValue("launch roadmap");
+  await expect(noteDescription(page)).toContainText("launch roadmap");
 });
 
 test("opens the newly created note when the board already has notes", async ({ page }) => {
@@ -69,7 +73,7 @@ test("opens the newly created note when the board already has notes", async ({ p
   await page.getByTestId("create-note").click();
 
   await expect(page.getByLabel("Note title")).toHaveValue("Untitled Note");
-  await expect(page.getByLabel("Note description")).toHaveValue("");
+  await expect(noteDescription(page)).not.toContainText("Existing content");
 });
 
 test("returns semantically matching notes for a search query", async ({ page }) => {
@@ -109,7 +113,7 @@ test("delivers note updates to a second connected client", async ({ page }) => {
     await page.getByTestId("create-note").click();
     await expect(page.getByLabel("Note title")).toHaveValue("Untitled Note");
     await page.getByLabel("Note title").fill("Realtime update");
-    await page.getByLabel("Note description").fill("Shared content");
+    await noteDescription(page).fill("Shared content");
 
     const updatedCard = secondClient.page
       .getByTestId("note-card")
