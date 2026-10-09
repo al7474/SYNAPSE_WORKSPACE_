@@ -58,6 +58,9 @@ jobs:
 
       - name: Unit tests
         run: pnpm test
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://postgres@127.0.0.1:5432/synapse_test
 
       - name: Build monorepo
         run: pnpm build
