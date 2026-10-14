@@ -4,6 +4,16 @@ Target duration: **2 minutes 50 seconds**.
 
 The demo is designed to show the product value first and the engineering depth through visible behavior. Keep the browser at desktop width, use a clean guest session, and avoid entering real credentials.
 
+## Product and engineering highlights
+
+Use these examples during the walkthrough or follow-up discussion to show the strongest existing decisions without adding more features:
+
+- **Semantic search and resilient indexing:** Search for a concept after creating a note. Embeddings use the note title and content, are stored in PostgreSQL as `vector(1024)`, and are queried with pgvector. If OpenRouter is unavailable, the note remains writable and is marked for reindexing.
+- **Realtime collaboration:** The second-client step demonstrates the GraphQL `noteUpdated` and `noteDeleted` subscriptions, scoped to the active board and revalidated against current access.
+- **Board sharing:** Boards support view/edit share links and email collaborators. The backend checks permissions on each operation; this is a useful follow-up demonstration if time allows.
+- **MCP integration:** VS Code can connect to the remote `/mcp` endpoint with OAuth 2.1 and PKCE, or use the local stdio server. Both expose tools for listing boards, searching and managing notes; see [MCP setup](../MCP_SETUP.md).
+- **Architecture:** The Next.js client talks to a GraphQL Yoga backend, which uses Prisma for PostgreSQL access and parameterized raw queries for pgvector similarity operations. See [the architecture guide](ARCHITECTURE.md).
+
 ## Before recording
 
 1. Start PostgreSQL/pgvector and apply migrations:
@@ -13,16 +23,18 @@ The demo is designed to show the product value first and the engineering depth t
    pnpm db:migrate
    ```
 
-2. Start the local stack with `pnpm dev`, or open the deployed frontend after checking `/healthz` and `/readyz`.
+2. For a local recording, configure the environment as described in [local deployment setup](DEPLOYMENT.md#local-setup) and start the stack with `pnpm dev`. Use a deployed frontend only after verifying its current URL and the backend `/healthz` and `/readyz` endpoints. This repository does not provide a verified public demo URL.
 3. Open a private browser window at the frontend URL.
 4. Confirm that the backend is awake and the first board loads.
 5. Keep a second browser window ready for the realtime moment.
 
-For a deterministic local semantic-search recording, run the E2E stack so the local OpenRouter mock is used:
+To verify semantic search deterministically, run the Playwright suite with its local OpenRouter mock:
 
 ```powershell
 pnpm e2e
 ```
+
+This command runs tests and exits; it does not leave a local stack running for a recording. For a live local semantic-search demonstration, configure `OPENROUTER_API_KEY` in `backend/.env` and confirm that indexing has completed before searching.
 
 ## Timed script
 
@@ -78,7 +90,7 @@ Optionally reload once to show the authentication screen remains.
 
 > The result is a focused workspace that is easy to try, reliable while writing, useful when the note collection grows, and honest about realtime and AI-service failures. The repository backs these flows with Playwright E2E tests, PostgreSQL integration tests, and CI checks.
 
-End on the repository or deployed URL, not on a setup terminal.
+End on the repository. Include a deployed URL only after verifying that the deployment is active; do not present the local guest flow as a hosted public demo.
 
 ## Evidence checklist
 

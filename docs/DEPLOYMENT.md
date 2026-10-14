@@ -15,29 +15,36 @@ The backend currently keeps GraphQL subscription PubSub, subscription tickets, a
 
 ## Local setup
 
-Create local files from the tracked templates:
+The tracked `.env.example` files document the environment contract with type placeholders such as `string`, `number`, and `boolean`; those placeholders are not runnable local values. Create `backend/.env` with the minimum settings for local development:
 
-```powershell
-Copy-Item .env.example .env
-Copy-Item backend/.env.example backend/.env
-Copy-Item frontend/.env.example frontend/.env.local
+```dotenv
+DATABASE_URL=postgresql://postgres:postgres@localhost:5434/synapse?schema=public
+NODE_ENV=development
 ```
 
-Use `NODE_ENV=development` locally. Start the database and apply migrations:
+Create `frontend/.env.local`:
+
+```dotenv
+NEXT_PUBLIC_GRAPHQL_ENDPOINT=http://localhost:4000/graphql
+SYNAPSE_DEPLOYMENT_ENV=development
+```
+
+Install dependencies, start the database, apply migrations, and run the app from the repository root:
 
 ```powershell
+pnpm install
 pnpm db:up
 pnpm db:migrate
 pnpm dev
 ```
 
-The local defaults use:
+Local development defaults to console email delivery and in-memory rate limiting, so Resend and Upstash credentials are not required. Set `OPENROUTER_API_KEY` in `backend/.env` to enable live embedding requests. Without a working key, note writes still succeed and indexing remains pending.
+
+The local services use:
 
 - Frontend: `http://localhost:3000`
 - Backend GraphQL: `http://localhost:4000/graphql`
 - PostgreSQL with pgvector: `localhost:5434`
-- Console email delivery: no external email provider is contacted.
-- In-memory rate limiting: no Upstash account is needed locally.
 
 Never place real API keys, database passwords, session tokens, or Resend credentials in a tracked `.env.example` file.
 
