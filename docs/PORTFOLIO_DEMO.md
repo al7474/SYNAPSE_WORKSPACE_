@@ -23,7 +23,7 @@ Use these examples during the walkthrough or follow-up discussion to show the st
    pnpm db:migrate
    ```
 
-2. For a local recording, configure the environment as described in [local deployment setup](DEPLOYMENT.md#local-setup) and start the stack with `pnpm dev`. Use a deployed frontend only after verifying its current URL and the backend `/healthz` and `/readyz` endpoints. This repository does not provide a verified public demo URL.
+2. The [live demo](https://synapse-workspace-app.vercel.app/) is available for portfolio reviewers. The first load may take about 30 seconds while the free-tier backend wakes up. For a local recording, configure the environment as described in [local deployment setup](DEPLOYMENT.md#local-setup) and start the stack with `pnpm dev`.
 3. Open a private browser window at the frontend URL.
 4. Confirm that the backend is awake and the first board loads.
 5. Keep a second browser window ready for the realtime moment.
@@ -42,7 +42,7 @@ This command runs tests and exits; it does not leave a local stack running for a
 
 > Synapse Workspace is a collaborative second brain for technical notes. It combines fast block-based writing, automatic persistence, semantic retrieval, and live synchronization in a small workspace shell.
 
-Show the authentication screen and point to the demo entry point.
+Show the authentication screen and point to the demo entry point. On the first visit, the readiness screen explains that the free-tier backend may take about 30 seconds to wake up.
 
 ### 0:15-0:35 | Zero-friction onboarding
 

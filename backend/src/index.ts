@@ -436,6 +436,12 @@ async function bootstrap() {
     const requestUrl = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
 
     if (requestUrl.pathname === HEALTH_PATH) {
+      const webRequest = new Request(
+        `http://${request.headers.host || "localhost"}${request.url || "/"}`,
+        { method: request.method, headers: request.headers as HeadersInit }
+      );
+      setAuthCorsHeaders(webRequest, response);
+
       if (request.method !== "GET" && request.method !== "HEAD") {
         response.setHeader("Allow", "GET, HEAD");
         sendHealthResponse(response, 405, { status: "method_not_allowed" });
@@ -447,6 +453,12 @@ async function bootstrap() {
     }
 
     if (requestUrl.pathname === READINESS_PATH) {
+      const webRequest = new Request(
+        `http://${request.headers.host || "localhost"}${request.url || "/"}`,
+        { method: request.method, headers: request.headers as HeadersInit }
+      );
+      setAuthCorsHeaders(webRequest, response);
+
       if (request.method !== "GET" && request.method !== "HEAD") {
         response.setHeader("Allow", "GET, HEAD");
         sendHealthResponse(response, 405, { status: "method_not_allowed" });

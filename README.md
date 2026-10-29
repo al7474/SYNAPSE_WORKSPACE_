@@ -6,7 +6,7 @@ Synapse helps people keep technical notes in shared boards and find them by mean
 
 ![Synapse Workspace with a saved note in a temporary guest workspace](docs/workspace.png)
 
-The app includes a temporary guest mode for exploring a running instance. This repository does not advertise a hosted demo URL; verify any deployment before sharing it as a live demo.
+The app includes a temporary guest mode for exploring the [live demo](https://synapse-workspace-app.vercel.app/). The first load may take about 30 seconds while the free-tier backend wakes up.
 
 ## Features
 

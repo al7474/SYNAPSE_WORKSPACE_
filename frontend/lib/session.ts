@@ -86,7 +86,7 @@ async function getCsrfToken(): Promise<string> {
   }
 
   if (!csrfRequest) {
-    csrfRequest = fetch(getAuthEndpoint("/auth/csrf"), {
+    csrfRequest = fetchSession(getAuthEndpoint("/auth/csrf"), {
       method: "GET",
       credentials: "include",
       headers: { Accept: "application/json" },
@@ -109,7 +109,7 @@ async function fetchWithCsrf(input: RequestInfo | URL, init: RequestInit): Promi
   const headers = new Headers(init.headers);
   headers.set("X-CSRF-Token", token);
 
-  return fetch(input, { ...init, headers });
+  return fetchSession(input, { ...init, headers });
 }
 
 async function fetchSession(input: RequestInfo | URL, init: RequestInit): Promise<Response> {

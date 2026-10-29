@@ -56,6 +56,19 @@ test("enters Demo Mode and exposes a ready workspace", async ({ page }) => {
   await expect(page.getByTestId("create-note")).toBeEnabled();
 });
 
+test("waits for a waking backend and then loads authentication automatically", async ({ page }) => {
+  await page.route("**/readyz", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    await route.continue();
+  });
+
+  await page.goto("/");
+  await expect(
+    page.getByText("The demo server is waking up. This usually takes up to 30 seconds on the free hosting tier.")
+  ).toBeVisible();
+  await expect(page.getByTestId("enter-demo")).toBeVisible({ timeout: 10_000 });
+});
+
 test("creates a note and autosaves title and content", async ({ page }) => {
   await enterDemo(page);
   await createSavedNote(page, "Launch roadmap", "launch roadmap");

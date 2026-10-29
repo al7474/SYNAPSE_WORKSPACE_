@@ -12,6 +12,11 @@ import {
   requestEmailVerification,
   requestPasswordReset,
 } from "@/lib/session";
+import {
+  isTransientNetworkError,
+  READINESS_POLL_MESSAGE,
+  waitForBackendReadiness,
+} from "@/lib/backend-readiness";
 import type { AuthMode, SessionMode, SessionState, ToastKind } from "@/types/workspace";
 
 const INVALID_LOGIN_MESSAGE = "The credentials do not match.";
@@ -36,6 +41,8 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
   const [isHydratingSession, setIsHydratingSession] = useState(true);
   const [sessionHydrationError, setSessionHydrationError] = useState("");
   const [hydrationAttempt, setHydrationAttempt] = useState(0);
+  const [isBackendWaking, setIsBackendWaking] = useState(false);
+  const [backendWakeElapsedSeconds, setBackendWakeElapsedSeconds] = useState(0);
 
   const clearLocalSession = useCallback(() => {
     clearLegacySessionStorage();
@@ -99,11 +106,46 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
     }
   }, [checkEmailVerification, onStatusChange, pushToast]);
 
+  const runWithReadinessRetry = useCallback(
+    async <T,>(action: () => Promise<T>): Promise<T> => {
+      try {
+        return await action();
+      } catch (error) {
+        if (!isTransientNetworkError(error)) {
+          throw error;
+        }
+
+        onStatusChange(READINESS_POLL_MESSAGE);
+        await waitForBackendReadiness();
+        return action();
+      }
+    },
+    [onStatusChange]
+  );
+
   useEffect(() => {
+    const controller = new AbortController();
     let isCancelled = false;
+    const wakeStartedAt = Date.now();
+    const wakingTimer = window.setTimeout(() => {
+      if (!isCancelled) {
+        setIsBackendWaking(true);
+      }
+    }, 1_500);
+    const elapsedTimer = window.setInterval(() => {
+      if (!isCancelled) {
+        setBackendWakeElapsedSeconds(Math.floor((Date.now() - wakeStartedAt) / 1_000));
+      }
+    }, 1_000);
 
     const hydrateSession = async () => {
       try {
+        await waitForBackendReadiness({ signal: controller.signal });
+        if (isCancelled) {
+          return;
+        }
+
+        setIsBackendWaking(false);
         const session = await currentSession();
 
         if (!isCancelled && session) {
@@ -114,12 +156,7 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
         }
       } catch (error) {
         if (!isCancelled) {
-          const message =
-            error instanceof DOMException && error.name === "AbortError"
-              ? "The secure workspace is waking up. Please retry in a moment."
-              : error instanceof Error
-                ? error.message
-                : "Unable to restore session";
+          const message = error instanceof Error ? error.message : "Unable to restore session";
           setSessionHydrationError(message);
           onStatusChange(message);
         }
@@ -134,12 +171,17 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
 
     return () => {
       isCancelled = true;
+      controller.abort();
+      window.clearTimeout(wakingTimer);
+      window.clearInterval(elapsedTimer);
     };
   }, [activateSession, clearLocalSession, hydrationAttempt, onStatusChange]);
 
   const retrySessionHydration = useCallback(() => {
     setSessionHydrationError("");
     setIsHydratingSession(true);
+    setIsBackendWaking(false);
+    setBackendWakeElapsedSeconds(0);
     setHydrationAttempt((attempt) => attempt + 1);
   }, []);
 
@@ -211,19 +253,23 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
     setIsSigningIn(true);
 
     try {
-      const guestSession = await createGuestSession();
+      const guestSession = await runWithReadinessRetry(createGuestSession);
       activateSession(guestSession);
       onStatusChange("Demo session active");
       pushToast("info", "You are in demo mode");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to start demo mode";
+      const message = isTransientNetworkError(error)
+        ? READINESS_POLL_MESSAGE
+        : error instanceof Error
+          ? error.message
+          : "Unable to start demo mode";
       setAuthError(message);
       onStatusChange(message);
       pushToast("error", message);
     } finally {
       setIsSigningIn(false);
     }
-  }, [activateSession, onStatusChange, pushToast]);
+  }, [activateSession, onStatusChange, pushToast, runWithReadinessRetry]);
 
   const handleSignIn = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -240,12 +286,16 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
       setIsSigningIn(true);
 
       try {
-        const session = await loginAccount(email, authPassword);
+        const session = await runWithReadinessRetry(() => loginAccount(email, authPassword));
         activateSession(session);
         onStatusChange("Signed in");
         pushToast("success", "Welcome back");
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Unable to sign in";
+        const message = isTransientNetworkError(error)
+          ? READINESS_POLL_MESSAGE
+          : error instanceof Error
+            ? error.message
+            : "Unable to sign in";
         setAuthError(message);
         onStatusChange(message);
         pushToast("error", message);
@@ -253,7 +303,7 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
         setIsSigningIn(false);
       }
     },
-    [activateSession, authEmail, authPassword, onStatusChange, pushToast]
+    [activateSession, authEmail, authPassword, onStatusChange, pushToast, runWithReadinessRetry]
   );
 
   const handleRegister = useCallback(
@@ -287,8 +337,10 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
       setIsSigningIn(true);
 
       try {
-        const result = await registerAccount(name, email, authPassword);
-        const session = await currentSession("user");
+        const result = await runWithReadinessRetry(() =>
+          registerAccount(name, email, authPassword)
+        );
+        const session = await runWithReadinessRetry(() => currentSession("user"));
 
         if (session) {
           activateSession(session);
@@ -311,7 +363,11 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
         onStatusChange("Registration request received");
         pushToast("info", result.message);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Unable to create account";
+        const message = isTransientNetworkError(error)
+          ? READINESS_POLL_MESSAGE
+          : error instanceof Error
+            ? error.message
+            : "Unable to create account";
         setAuthError(message);
         onStatusChange(message);
         pushToast("error", message);
@@ -319,7 +375,16 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
         setIsSigningIn(false);
       }
     },
-    [activateSession, authConfirmPassword, authEmail, authName, authPassword, onStatusChange, pushToast]
+    [
+      activateSession,
+      authConfirmPassword,
+      authEmail,
+      authName,
+      authPassword,
+      onStatusChange,
+      pushToast,
+      runWithReadinessRetry,
+    ]
   );
 
   const handleForgotPassword = useCallback(
@@ -369,6 +434,8 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
     isSigningIn,
     isHydratingSession,
     sessionHydrationError,
+    isBackendWaking,
+    backendWakeElapsedSeconds,
     retrySessionHydration,
     setAuthMode,
     setAuthName,

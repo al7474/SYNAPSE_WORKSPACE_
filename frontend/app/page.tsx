@@ -15,7 +15,7 @@ export default function HomePage() {
   const [isNoteEditorOpen, setIsNoteEditorOpen] = useState(false);
   const [isDeletingDemoWorkspace, setIsDeletingDemoWorkspace] = useState(false);
   const [accessBoardId, setAccessBoardId] = useState<string | null>(null);
-  const [, setStatus] = useState("Initializing secure workspace environment...");
+  const [status, setStatus] = useState("Initializing secure workspace environment...");
   const { toasts, pushToast } = useToasts();
 
   const auth = useAuthSession({
@@ -128,6 +128,9 @@ export default function HomePage() {
     return (
       <SessionLoadingScreen
         error={auth.sessionHydrationError || undefined}
+        isWaking={auth.isBackendWaking}
+        elapsedSeconds={auth.backendWakeElapsedSeconds}
+        status={status}
         onRetry={auth.sessionHydrationError ? auth.retrySessionHydration : undefined}
       />
     );

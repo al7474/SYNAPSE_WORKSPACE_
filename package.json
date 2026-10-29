@@ -23,7 +23,7 @@
     "typecheck": "pnpm --filter @synapse/backend typecheck && pnpm --filter @synapse/frontend typecheck",
     "lint": "eslint backend/src frontend --max-warnings=0",
     "build": "pnpm -r --filter @synapse/* build",
-    "test": "pnpm --filter @synapse/backend test",
+    "test": "pnpm --filter @synapse/backend test && pnpm --filter @synapse/backend exec tsx --test ../frontend/lib/backend-readiness.test.ts",
     "test:integration": "pnpm --filter @synapse/backend test:integration",
     "e2e": "node scripts/e2e/run-e2e.mjs",
     "smoke:embedding": "node --env-file=.env scripts/smoke/openrouter-embedding.js",
