@@ -3,8 +3,16 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { X } from "lucide-react";
-import { BlockNoteEditorClient } from "@/components/editor/blocknote-editor-client";
+import dynamic from "next/dynamic";
 import type { Note } from "@/types/workspace";
+
+const BlockNoteEditorClient = dynamic(
+  () => import("@/components/editor/blocknote-editor-client").then((module) => module.BlockNoteEditorClient),
+  {
+    ssr: false,
+    loading: () => <div className="min-h-80 animate-pulse bg-surface-sunken" aria-label="Loading note editor" />,
+  }
+);
 
 type NoteEditorPanelProps = {
   selectedNote: Note | null;
