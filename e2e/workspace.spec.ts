@@ -109,6 +109,84 @@ test("logs out and returns to the authentication screen", async ({ page }) => {
   await expect(page.getByTestId("logout")).toHaveCount(0);
 });
 
+test("cancels demo workspace deletion without changing its session or notes", async ({ page }) => {
+  await enterDemo(page);
+  await createSavedNote(page, "Keep this demo note", "The workspace should remain intact.");
+
+  let deletionRequestCount = 0;
+  await page.route("**/auth/guest-session", async (route) => {
+    if (route.request().method() === "DELETE") {
+      deletionRequestCount += 1;
+    }
+
+    await route.continue();
+  });
+
+  await page.getByRole("button", { name: "Delete demo workspace" }).click();
+
+  const dialog = page.getByRole("dialog", { name: "Delete this demo workspace?" });
+  const cancelButton = dialog.getByRole("button", { name: "Cancel" });
+  const deleteButton = dialog.getByRole("button", { name: "Delete", exact: true });
+
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText(
+    "permanently removes all of its boards and notes"
+  );
+  await expect(cancelButton).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(deleteButton).toBeFocused();
+  await cancelButton.click();
+
+  await expect(dialog).toBeHidden();
+  await expect(page.getByTestId("logout")).toBeVisible();
+  await expect(page.getByLabel("Note title")).toHaveValue("Keep this demo note");
+  await expect(noteDescription(page)).toContainText("The workspace should remain intact.");
+  expect(deletionRequestCount).toBe(0);
+});
+
+test("confirms demo workspace deletion and returns to authentication", async ({ page }) => {
+  await enterDemo(page);
+  await createSavedNote(page, "Delete with demo workspace", "This note should be removed.");
+
+  await page.getByRole("button", { name: "Delete demo workspace" }).click();
+  const dialog = page.getByRole("dialog", { name: "Delete this demo workspace?" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Delete", exact: true }).click();
+
+  await expect(page.getByTestId("enter-demo")).toBeVisible();
+  await expect(page.getByTestId("logout")).toHaveCount(0);
+});
+
+test("keeps demo deletion retryable after a server error", async ({ page }) => {
+  await enterDemo(page);
+  await page.route("**/auth/guest-session", async (route) => {
+    if (route.request().method() === "DELETE") {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Unable to delete demo workspace" }),
+      });
+      return;
+    }
+
+    await route.continue();
+  });
+
+  await page.getByRole("button", { name: "Delete demo workspace" }).click();
+  const dialog = page.getByRole("dialog", { name: "Delete this demo workspace?" });
+  await dialog.getByRole("button", { name: "Delete", exact: true }).click();
+
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("alert")).toHaveText("Unable to delete demo workspace");
+  await expect(page.getByTestId("logout")).toBeVisible();
+
+  await page.unroute("**/auth/guest-session");
+  await dialog.getByRole("button", { name: "Delete", exact: true }).click();
+
+  await expect(page.getByTestId("enter-demo")).toBeVisible();
+  await expect(page.getByTestId("logout")).toHaveCount(0);
+});
+
 test("returns to authentication when the session cookie is gone", async ({ page }) => {
   await enterDemo(page);
   await page.context().clearCookies();

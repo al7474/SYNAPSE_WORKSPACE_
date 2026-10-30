@@ -248,6 +248,15 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
     }
   }, [clearLocalSession, pushToast, sessionMode]);
 
+  const deleteDemoWorkspace = useCallback(async (): Promise<void> => {
+    if (sessionMode !== "guest") {
+      throw new Error("Unable to delete demo workspace");
+    }
+
+    await deleteGuestSession();
+    clearLocalSession();
+  }, [clearLocalSession, sessionMode]);
+
   const handleGuestAccess = useCallback(async () => {
     setAuthError("");
     setIsSigningIn(true);
@@ -450,5 +459,6 @@ export function useAuthSession({ onStatusChange, pushToast }: UseAuthSessionOpti
     handleRequestEmailVerification,
     checkEmailVerification,
     clearSession,
+    deleteDemoWorkspace,
   };
 }

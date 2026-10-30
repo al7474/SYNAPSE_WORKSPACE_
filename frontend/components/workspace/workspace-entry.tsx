@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { DeleteDemoWorkspaceDialog } from "@/components/workspace/delete-demo-workspace-dialog";
 import { WorkspaceShell } from "@/components/workspace/workspace-shell";
 import { useBoards } from "@/hooks/use-boards";
 import { useNotes } from "@/hooks/use-notes";
@@ -27,7 +28,10 @@ export default function WorkspaceEntry({
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isNoteEditorOpen, setIsNoteEditorOpen] = useState(false);
   const [isDeletingDemoWorkspace, setIsDeletingDemoWorkspace] = useState(false);
+  const [isDemoDeleteDialogOpen, setIsDemoDeleteDialogOpen] = useState(false);
+  const [demoDeleteError, setDemoDeleteError] = useState("");
   const [accessBoardId, setAccessBoardId] = useState<string | null>(null);
+  const isDeletingDemoWorkspaceRef = useRef(false);
   const canManageSharing = auth.sessionMode !== "user" || auth.emailVerified;
 
   const boards = useBoards({
@@ -55,34 +59,51 @@ export default function WorkspaceEntry({
     void auth.clearSession();
   };
 
+  const handleOpenDeleteDemoWorkspace = () => {
+    if (auth.sessionMode !== "guest" || isDeletingDemoWorkspaceRef.current) {
+      return;
+    }
+
+    setDemoDeleteError("");
+    setIsDemoDeleteDialogOpen(true);
+  };
+
+  const handleCancelDeleteDemoWorkspace = () => {
+    if (isDeletingDemoWorkspaceRef.current) {
+      return;
+    }
+
+    setDemoDeleteError("");
+    setIsDemoDeleteDialogOpen(false);
+  };
+
   const handleDeleteDemoWorkspace = async () => {
-    if (auth.sessionMode !== "guest") {
+    if (auth.sessionMode !== "guest" || isDeletingDemoWorkspaceRef.current) {
       return;
     }
 
-    const shouldDelete = window.confirm(
-      "Delete this demo workspace? All boards and notes in this temporary session will be permanently removed."
-    );
-
-    if (!shouldDelete) {
-      return;
-    }
-
+    isDeletingDemoWorkspaceRef.current = true;
     setIsDeletingDemoWorkspace(true);
-    setIsSidebarOpen(false);
-    setIsNoteEditorOpen(false);
-    setAccessBoardId(null);
-    boards.resetBoards();
-    notes.resetNotes();
+    setDemoDeleteError("");
 
     try {
-      const deleted = await auth.clearSession();
+      await auth.deleteDemoWorkspace();
 
-      if (deleted) {
-        onStatusChange("Demo workspace deleted");
-        pushToast("success", "Demo workspace deleted");
-      }
+      setIsSidebarOpen(false);
+      setIsNoteEditorOpen(false);
+      setAccessBoardId(null);
+      boards.resetBoards();
+      notes.resetNotes();
+      setIsDemoDeleteDialogOpen(false);
+      onStatusChange("Demo workspace deleted");
+      pushToast("success", "Demo workspace deleted");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to delete demo workspace";
+      setDemoDeleteError(message);
+      onStatusChange(message);
+      pushToast("error", message);
     } finally {
+      isDeletingDemoWorkspaceRef.current = false;
       setIsDeletingDemoWorkspace(false);
     }
   };
@@ -124,6 +145,7 @@ export default function WorkspaceEntry({
   };
 
   return (
+    <>
     <WorkspaceShell
       emailVerification={
         auth.sessionMode === "user" && !auth.emailVerified
@@ -164,7 +186,7 @@ export default function WorkspaceEntry({
           pushToast("info", "Verify your email to manage sharing and collaborators");
         },
         onCreateBoard: boards.handleCreateBoard,
-        onDeleteDemoWorkspace: handleDeleteDemoWorkspace,
+        onDeleteDemoWorkspace: handleOpenDeleteDemoWorkspace,
       }}
       content={{
         searchText: notes.searchText,
@@ -208,5 +230,13 @@ export default function WorkspaceEntry({
       }}
       toasts={toasts}
     />
+    <DeleteDemoWorkspaceDialog
+      open={isDemoDeleteDialogOpen}
+      isDeleting={isDeletingDemoWorkspace}
+      error={demoDeleteError}
+      onCancel={handleCancelDeleteDemoWorkspace}
+      onConfirm={handleDeleteDemoWorkspace}
+    />
+    </>
   );
 }
